@@ -256,8 +256,9 @@ class GeneratorPage(QWidget):
         # Prompt
         left_layout.addWidget(StrongBodyLabel("Prompt"))
         self.prompt_edit = TextEdit()
+        self.prompt_edit.setStyleSheet("font-size: 11px;") 
         self.prompt_edit.setPlaceholderText("Enter your prompt here...")
-        self.prompt_edit.setFixedHeight(100)
+        self.prompt_edit.setFixedHeight(200)
         left_layout.addWidget(self.prompt_edit)
 
         # Settings
@@ -318,7 +319,8 @@ class GeneratorPage(QWidget):
         
         # Splitter approach might be better but let's try adjusting stretch factors first
         # Left panel fixed width or max width?
-        left_panel.setMaximumWidth(400)
+        left_panel.setMinimumWidth(300)
+        left_panel.setMaximumWidth(500)
         
         main_layout.addWidget(left_panel)
         main_layout.addWidget(right_panel, 1)
