@@ -9,7 +9,7 @@
 - **现代化 UI**: 采用 Windows 11 风格的 Fluent Design 界面。
 - **多图参考**: 支持拖拽/粘贴最多 13 张参考图片进行生成。
 - **参数调整**: 
-  - 模型选择 (nano-banana, nano-banana-fast, nano-banana-pro)
+  - 模型选择 (nano-banana, nano-banana-fast, nano-banana-pro, nano-banana-pro-vt)
   - 宽高比 (1:1, 16:9, 9:16 等多种比例)
   - 图片尺寸 (1K, 2K, 4K)
 - **历史记录**: 
@@ -63,3 +63,7 @@
 
 ---
 *本项目非 Grsai 官方客户端，仅供学习交流使用。*
+
+## 更新记录
+
+- 2025-12-15: 添加"nano-banana-pro-vt"模型支持
