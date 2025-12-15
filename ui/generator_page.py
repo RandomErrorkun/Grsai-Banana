@@ -267,7 +267,7 @@ class GeneratorPage(QWidget):
         # Model
         settings_layout.addWidget(CaptionLabel("Model"))
         self.model_combo = ComboBox()
-        self.model_combo.addItems(["nano-banana-fast", "nano-banana", "nano-banana-pro"])
+        self.model_combo.addItems(["nano-banana-fast", "nano-banana", "nano-banana-pro", "nano-banana-pro-vt"])
         self.model_combo.setCurrentText(cfg.get("last_model"))
         settings_layout.addWidget(self.model_combo)
 
