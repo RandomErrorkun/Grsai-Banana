@@ -6,12 +6,13 @@ platforms = ["win-64"]
 version = "0.1.0"
 
 [tasks]
-start = "python main.py"
+start = "pythonw main.py"
 build = """
 nuitka 
 --standalone 
 --onefile 
 --enable-plugin=pyside6 
+--windows-disable-console 
 --windows-icon-from-ico=logo.ico 
 --include-data-file=logo.ico=logo.ico 
 --output-dir=dist 
