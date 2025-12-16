@@ -234,13 +234,17 @@ class AspectRatioLabel(QLabel):
             super().setPixmap(scaled)
 
 class GeneratorPage(QWidget):
-    def __init__(self):
+    def __init__(self, parent_window=None):
         super().__init__()
+        self.parent_window = parent_window
         self.setObjectName("GeneratorPage")
         self.initUI()
 
     def initUI(self):
         main_layout = QHBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+        main_layout.setAlignment(Qt.AlignLeft)
         
         # Left Side - Controls
         left_panel = QWidget()
@@ -293,13 +297,33 @@ class GeneratorPage(QWidget):
         self.gen_btn.clicked.connect(self.on_generate)
         left_layout.addWidget(self.gen_btn)
         
+        # Status label moved to left side below generate button
+        self.status_label = CaptionLabel("Ready")
+        self.status_label.setAlignment(Qt.AlignCenter)
+        left_layout.addWidget(self.status_label)
+        
+        # Toggle button for collapsing/expanding preview - moved to left side
+        toggle_layout = QHBoxLayout()
+        toggle_layout.addStretch()
+        self.toggle_preview_btn = TransparentToolButton(FluentIcon.CARE_DOWN_SOLID)
+        self.toggle_preview_btn.setFixedSize(24, 24)
+        self.toggle_preview_btn.setToolTip("Collapse Preview")
+        self.toggle_preview_btn.clicked.connect(self.toggle_preview)
+        toggle_layout.addWidget(self.toggle_preview_btn)
+        left_layout.addLayout(toggle_layout)
+        
         left_layout.addStretch()
 
         # Right Side - Preview
-        right_panel = QWidget()
-        right_layout = QVBoxLayout(right_panel)
+        self.right_panel = QWidget()
+        right_layout = QVBoxLayout(self.right_panel)
         
-        right_layout.addWidget(StrongBodyLabel("Result Image"))
+        # Header with title (no toggle button here anymore)
+        header_layout = QHBoxLayout()
+        header_layout.addWidget(StrongBodyLabel("Result Image"))
+        header_layout.addStretch()
+        
+        right_layout.addLayout(header_layout)
         
         # Use a container for the image to handle resizing better
         self.image_container = QWidget()
@@ -313,17 +337,14 @@ class GeneratorPage(QWidget):
         container_layout.addWidget(self.preview_label)
         right_layout.addWidget(self.image_container, 1) # Give it stretch factor
         
-        self.status_label = CaptionLabel("Ready")
-        self.status_label.setAlignment(Qt.AlignCenter)
-        right_layout.addWidget(self.status_label)
+        # Track preview collapsed state
+        self.is_preview_collapsed = False
         
-        # Splitter approach might be better but let's try adjusting stretch factors first
-        # Left panel fixed width or max width?
-        left_panel.setMinimumWidth(300)
-        left_panel.setMaximumWidth(500)
+        # Set fixed width for left panel to prevent it from expanding when right panel is hidden
+        left_panel.setFixedWidth(400)
         
         main_layout.addWidget(left_panel)
-        main_layout.addWidget(right_panel, 1)
+        main_layout.addWidget(self.right_panel, 1)
 
     def keyPressEvent(self, event):
         if event.modifiers() == Qt.ControlModifier and event.key() == Qt.Key_V:
@@ -440,10 +461,41 @@ class GeneratorPage(QWidget):
     def on_poll_update(self, progress, status):
         self.status_label.setText(f"Status: {status} - Progress: {progress}%")
 
+    def toggle_preview(self):
+        """Toggle the collapsed state of the entire right panel"""
+        self.is_preview_collapsed = not self.is_preview_collapsed
+        
+        if self.is_preview_collapsed:
+            # Collapse: hide entire right panel and update button
+            self.right_panel.hide()
+            self.toggle_preview_btn.setIcon(FluentIcon.CARE_LEFT_SOLID)
+            self.toggle_preview_btn.setToolTip("Expand Preview")
+            
+            # Adjust window width to fit only left panel + navigation
+            if self.parent_window:
+                self.parent_window.resize(450, self.parent_window.height())  # Left panel (400) + Navigation (60)
+        else:
+            # Expand: show entire right panel and update button
+            self.right_panel.show()
+            self.toggle_preview_btn.setIcon(FluentIcon.CARE_DOWN_SOLID)
+            self.toggle_preview_btn.setToolTip("Collapse Preview")
+            
+            # Restore window width to show both panels
+            if self.parent_window:
+                self.parent_window.resize(1100, self.parent_window.height())
+            
+            # If there's a current image that was hidden, refresh it
+            if hasattr(self, '_last_generated_image') and self._last_generated_image:
+                self.preview_label.setImage(self._last_generated_image)
+
     def on_poll_finished(self, task_id, success, result_path, msg):
         if success:
             self.status_label.setText("Generation Complete!")
-            self.preview_label.setImage(result_path)
+            # Save the last generated image path for later use
+            self._last_generated_image = result_path
+            # Only set the image if preview is not collapsed
+            if not self.is_preview_collapsed:
+                self.preview_label.setImage(result_path)
             InfoBar.success(title="Done", content="Image generated successfully.", parent=self, position=InfoBarPosition.TOP_RIGHT)
         else:
             self.status_label.setText(f"Failed: {msg}")
