@@ -12,7 +12,7 @@ class MainWindow(FluentWindow):
         self.initWindow()
 
         # Create sub interfaces
-        self.generator_interface = GeneratorPage()
+        self.generator_interface = GeneratorPage(self)
         self.history_interface = HistoryPage()
         self.settings_interface = SettingsPage()
 
@@ -21,7 +21,7 @@ class MainWindow(FluentWindow):
 
     def initWindow(self):
         self.resize(1100, 750)
-        self.setMinimumWidth(760)
+        self.setMinimumWidth(450)  # Left panel (400) + Navigation (50)
         self.setWindowTitle('Banana Image Generator')
         
         # Center on screen
