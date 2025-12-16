@@ -1,8 +1,8 @@
 import os
 import base64
-from PySide6.QtCore import Qt, Signal, QThread, QUrl, QSize
+from PySide6.QtCore import Qt, Signal, QThread, QUrl, QSize, QRect
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFileDialog, QFrame, QSizePolicy, QToolButton, QScrollArea
-from PySide6.QtGui import QPixmap, QDragEnterEvent, QDropEvent, QImage, QIcon
+from PySide6.QtGui import QPixmap, QDragEnterEvent, QDropEvent, QImage, QIcon, QPainter, QPen, QFont, QMouseEvent, QColor
 from qfluentwidgets import (CardWidget, PrimaryPushButton, ComboBox, TextEdit, 
                             ImageLabel, StrongBodyLabel, CaptionLabel, InfoBar, InfoBarPosition, FluentIcon, TransparentToolButton)
 
@@ -233,11 +233,35 @@ class AspectRatioLabel(QLabel):
             scaled = self._pixmap.scaled(target_size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
             super().setPixmap(scaled)
 
+class ModernToggleButton(TransparentToolButton):
+    """Modern toggle button for preview panel"""
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedSize(24, 24)
+        self.is_expanded = True  # True means right panel is visible
+        self.update_icon()
+    
+    def update_icon(self):
+        """Update icon based on expanded state"""
+        if self.is_expanded:
+            self.setIcon(FluentIcon.PAGE_RIGHT)
+            self.setToolTip("Collapse Preview")
+        else:
+            self.setIcon(FluentIcon.PAGE_LEFT)
+            self.setToolTip("Expand Preview")
+    
+    def set_expanded(self, expanded: bool):
+        """Set the expanded state and update the icon"""
+        self.is_expanded = expanded
+        self.update_icon()
+
 class GeneratorPage(QWidget):
     def __init__(self, parent_window=None):
         super().__init__()
         self.parent_window = parent_window
         self.setObjectName("GeneratorPage")
+        self._previous_window_width = None  # Store the window width before collapsing
         self.initUI()
 
     def initUI(self):
@@ -251,10 +275,21 @@ class GeneratorPage(QWidget):
         left_layout = QVBoxLayout(left_panel)
         left_layout.setSpacing(15)
         
-        # Image Upload
+        # Image Upload with toggle button
         self.drop_area = ImageDropArea()
         self.drop_area.setFixedHeight(200)
-        left_layout.addWidget(StrongBodyLabel("Reference Image (Optional)"))
+        
+        # Header layout for Reference Image label and toggle button
+        header_layout = QHBoxLayout()
+        header_layout.addWidget(StrongBodyLabel("Reference Image (Optional)"))
+        header_layout.addStretch()
+        
+        # Modern toggle button
+        self.toggle_btn = ModernToggleButton()
+        self.toggle_btn.clicked.connect(self.toggle_preview)
+        header_layout.addWidget(self.toggle_btn)
+        
+        left_layout.addLayout(header_layout)
         left_layout.addWidget(self.drop_area)
 
         # Prompt
@@ -302,23 +337,13 @@ class GeneratorPage(QWidget):
         self.status_label.setAlignment(Qt.AlignCenter)
         left_layout.addWidget(self.status_label)
         
-        # Toggle button for collapsing/expanding preview - moved to left side
-        toggle_layout = QHBoxLayout()
-        toggle_layout.addStretch()
-        self.toggle_preview_btn = TransparentToolButton(FluentIcon.CARE_DOWN_SOLID)
-        self.toggle_preview_btn.setFixedSize(24, 24)
-        self.toggle_preview_btn.setToolTip("Collapse Preview")
-        self.toggle_preview_btn.clicked.connect(self.toggle_preview)
-        toggle_layout.addWidget(self.toggle_preview_btn)
-        left_layout.addLayout(toggle_layout)
-        
         left_layout.addStretch()
 
         # Right Side - Preview
         self.right_panel = QWidget()
         right_layout = QVBoxLayout(self.right_panel)
         
-        # Header with title (no toggle button here anymore)
+        # Header with title
         header_layout = QHBoxLayout()
         header_layout.addWidget(StrongBodyLabel("Result Image"))
         header_layout.addStretch()
@@ -466,23 +491,28 @@ class GeneratorPage(QWidget):
         self.is_preview_collapsed = not self.is_preview_collapsed
         
         if self.is_preview_collapsed:
-            # Collapse: hide entire right panel and update button
+            # Collapse: hide entire right panel and update toggle button
             self.right_panel.hide()
-            self.toggle_preview_btn.setIcon(FluentIcon.CARE_LEFT_SOLID)
-            self.toggle_preview_btn.setToolTip("Expand Preview")
+            self.toggle_btn.set_expanded(False)
             
-            # Adjust window width to fit only left panel + navigation
+            # Store current window width before collapsing
             if self.parent_window:
-                self.parent_window.resize(450, self.parent_window.height())  # Left panel (400) + Navigation (60)
+                self._previous_window_width = self.parent_window.width()
+                # Adjust window width to fit only left panel + navigation
+                self.parent_window.resize(450, self.parent_window.height())  # Left panel (400) + Navigation (50)
         else:
-            # Expand: show entire right panel and update button
+            # Expand: show entire right panel and update toggle button
             self.right_panel.show()
-            self.toggle_preview_btn.setIcon(FluentIcon.CARE_DOWN_SOLID)
-            self.toggle_preview_btn.setToolTip("Collapse Preview")
+            self.toggle_btn.set_expanded(True)
             
-            # Restore window width to show both panels
+            # Restore window width to previously stored value or default
             if self.parent_window:
-                self.parent_window.resize(1100, self.parent_window.height())
+                if self._previous_window_width and self._previous_window_width > 450:
+                    # Restore to the previously stored width
+                    self.parent_window.resize(self._previous_window_width, self.parent_window.height())
+                else:
+                    # Use default width if no previous width stored or it's too small
+                    self.parent_window.resize(1100, self.parent_window.height())
             
             # If there's a current image that was hidden, refresh it
             if hasattr(self, '_last_generated_image') and self._last_generated_image:
