@@ -1,7 +1,7 @@
 import os
 import base64
 from PySide6.QtCore import Qt, Signal, QThread, QUrl, QSize, QRect
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFileDialog, QFrame, QSizePolicy, QToolButton, QScrollArea
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFileDialog, QFrame, QSizePolicy, QToolButton, QScrollArea, QSplitter
 from PySide6.QtGui import QPixmap, QDragEnterEvent, QDropEvent, QImage, QIcon, QPainter, QPen, QFont, QMouseEvent, QColor
 from qfluentwidgets import (CardWidget, PrimaryPushButton, ComboBox, TextEdit, 
                             ImageLabel, StrongBodyLabel, CaptionLabel, InfoBar, InfoBarPosition, FluentIcon, TransparentToolButton)
@@ -265,16 +265,17 @@ class GeneratorPage(QWidget):
         self.initUI()
 
     def initUI(self):
-        main_layout = QHBoxLayout(self)
+        main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
-        main_layout.setAlignment(Qt.AlignLeft)
+        
+        # Create splitter for left and right panels
+        self.splitter = QSplitter(Qt.Horizontal)
         
         # Left Side - Controls
         left_panel = QWidget()
         left_layout = QVBoxLayout(left_panel)
         left_layout.setSpacing(15)
-        
         # Image Upload with toggle button
         self.drop_area = ImageDropArea()
         self.drop_area.setFixedHeight(200)
@@ -338,7 +339,7 @@ class GeneratorPage(QWidget):
         left_layout.addWidget(self.status_label)
         
         left_layout.addStretch()
-
+        
         # Right Side - Preview
         self.right_panel = QWidget()
         right_layout = QVBoxLayout(self.right_panel)
@@ -355,7 +356,7 @@ class GeneratorPage(QWidget):
         self.image_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         container_layout = QVBoxLayout(self.image_container)
         container_layout.setContentsMargins(0, 0, 0, 0)
-        
+        self.image_container.setMinimumWidth(200)
         self.preview_label = AspectRatioLabel()
         self.preview_label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
         
@@ -365,11 +366,29 @@ class GeneratorPage(QWidget):
         # Track preview collapsed state
         self.is_preview_collapsed = False
         
-        # Set fixed width for left panel to prevent it from expanding when right panel is hidden
-        left_panel.setFixedWidth(400)
+        # Set fixed width for left panel and minimum width for right panel
+        left_panel.setFixedWidth(400)  # Fixed width for left panel
+        self.right_panel.setMinimumWidth(200)  # Minimum width for right panel
         
-        main_layout.addWidget(left_panel)
-        main_layout.addWidget(self.right_panel, 1)
+        # Add panels to splitter
+        self.splitter.addWidget(left_panel)
+        self.splitter.addWidget(self.right_panel)
+        
+        # Set stretch factors (left panel doesn't stretch, right panel does)
+        self.splitter.setStretchFactor(0, 0)  # Left panel
+        self.splitter.setStretchFactor(1, 1)  # Right panel
+        
+        # Set initial sizes (400 for left, rest for right)
+        self.splitter.setSizes([400, 700])
+        
+        # Disable splitter handle to prevent dragging
+        self.splitter.handle(1).setEnabled(False)
+        
+        # Set minimum size for the entire widget
+        self.setMinimumWidth(650)  # navigation(50) + left(400) + right_min(200)
+        
+        # Add splitter to main layout
+        main_layout.addWidget(self.splitter)
 
     def keyPressEvent(self, event):
         if event.modifiers() == Qt.ControlModifier and event.key() == Qt.Key_V:
