@@ -11,3 +11,5 @@ grsai提示教程.md
 # pixi environments
 .pixi/*
 !.pixi/config.toml
+GPT-Image-api.txt
+Imagen API.txt
