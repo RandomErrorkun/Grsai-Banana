@@ -256,11 +256,11 @@ class ModernToggleButton(TransparentToolButton):
         self.is_expanded = expanded
         self.update_icon()
 
-class GeneratorPage(QWidget):
+class BananaGeneratorPage(QWidget):
     def __init__(self, parent_window=None):
         super().__init__()
         self.parent_window = parent_window
-        self.setObjectName("GeneratorPage")
+        self.setObjectName("BananaGeneratorPage")
         self._previous_window_width = None  # Store the window width before collapsing
         self.initUI()
 
@@ -309,21 +309,21 @@ class GeneratorPage(QWidget):
         settings_layout.addWidget(CaptionLabel("Model"))
         self.model_combo = ComboBox()
         self.model_combo.addItems(["nano-banana-fast", "nano-banana", "nano-banana-pro", "nano-banana-pro-vt"])
-        self.model_combo.setCurrentText(cfg.get("last_model"))
+        self.model_combo.setCurrentText(cfg.get("nano_banana_last_model"))
         settings_layout.addWidget(self.model_combo)
 
         # Aspect Ratio
         settings_layout.addWidget(CaptionLabel("Aspect Ratio"))
         self.ratio_combo = ComboBox()
         self.ratio_combo.addItems(["auto", "1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3", "5:4", "4:5", "21:9"])
-        self.ratio_combo.setCurrentText(cfg.get("last_aspect_ratio"))
+        self.ratio_combo.setCurrentText(cfg.get("nano_banana_last_aspect_ratio"))
         settings_layout.addWidget(self.ratio_combo)
 
         # Image Size
         settings_layout.addWidget(CaptionLabel("Image Size"))
         self.size_combo = ComboBox()
         self.size_combo.addItems(["1K", "2K", "4K"])
-        self.size_combo.setCurrentText(cfg.get("last_image_size"))
+        self.size_combo.setCurrentText(cfg.get("nano_banana_last_image_size"))
         settings_layout.addWidget(self.size_combo)
 
         left_layout.addWidget(settings_card)
@@ -423,9 +423,9 @@ class GeneratorPage(QWidget):
         size = self.size_combo.currentText()
         
         # Save settings
-        cfg.set("last_model", model)
-        cfg.set("last_aspect_ratio", ratio)
-        cfg.set("last_image_size", size)
+        cfg.set("nano_banana_last_model", model)
+        cfg.set("nano_banana_last_aspect_ratio", ratio)
+        cfg.set("nano_banana_last_image_size", size)
 
         # Handle Images
         ref_urls = []
