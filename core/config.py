@@ -7,9 +7,12 @@ DEFAULT_CONFIG = {
     "api_base_url": "https://grsai.dakka.com.cn",
     "api_key": "",
     "output_folder": os.path.join(os.getcwd(), "output"),
-    "last_model": "nano-banana-fast",
-    "last_aspect_ratio": "auto",
-    "last_image_size": "1K"
+    "nano_banana_last_model": "nano-banana-fast",
+    "nano_banana_last_aspect_ratio": "auto",
+    "nano_banana_last_image_size": "1K",
+    "gpt_image_last_model": "sora-image",
+    "gpt_image_last_size": "1:1",
+    "gpt_image_last_variants": 1
 }
 
 class Config:

@@ -19,17 +19,33 @@ class TaskDetailsDialog(MessageBoxBase):
         self.content.setStyleSheet("background-color: transparent; border: none;")
         
         # Format details
-        html = f"""
-        <h3>Prompt</h3>
-        <p>{task_data['prompt']}</p>
-        <hr>
-        <p><b>Model:</b> {task_data['model']}</p>
-        <p><b>Size:</b> {task_data['image_size']}</p>
-        <p><b>Aspect Ratio:</b> {task_data['aspect_ratio']}</p>
-        <p><b>Status:</b> {task_data['status']}</p>
-        <p><b>Created At:</b> {task_data['created_at']}</p>
-        <p><b>Task ID:</b> {task_data['id']}</p>
-        """
+        api_type = task_data.get('api_type', 'nano_banana')
+        if api_type == 'gpt_image':
+            html = f"""
+            <h3>Prompt</h3>
+            <p>{task_data['prompt']}</p>
+            <hr>
+            <p><b>API Type:</b> GPT Image</p>
+            <p><b>Model:</b> {task_data['model']}</p>
+            <p><b>Size:</b> {task_data['size']}</p>
+            <p><b>Variants:</b> {task_data['variants']}</p>
+            <p><b>Status:</b> {task_data['status']}</p>
+            <p><b>Created At:</b> {task_data['created_at']}</p>
+            <p><b>Task ID:</b> {task_data['id']}</p>
+            """
+        else:
+            html = f"""
+            <h3>Prompt</h3>
+            <p>{task_data['prompt']}</p>
+            <hr>
+            <p><b>API Type:</b> Nano Banana</p>
+            <p><b>Model:</b> {task_data['model']}</p>
+            <p><b>Size:</b> {task_data['image_size']}</p>
+            <p><b>Aspect Ratio:</b> {task_data['aspect_ratio']}</p>
+            <p><b>Status:</b> {task_data['status']}</p>
+            <p><b>Created At:</b> {task_data['created_at']}</p>
+            <p><b>Task ID:</b> {task_data['id']}</p>
+            """
         if task_data.get('failure_reason'):
             html += f"<p style='color:red'><b>Error:</b> {task_data['failure_reason']}</p>"
             
@@ -101,7 +117,15 @@ class HistoryItem(CardWidget):
         self.prompt_label.setToolTip("Click to view full details")
         
         info_layout.addWidget(self.prompt_label)
-        info_layout.addWidget(BodyLabel(f"Model: {task_data['model']} | Size: {task_data['image_size']}"))
+        
+        # Handle different size fields based on API type
+        api_type = task_data.get('api_type', 'nano_banana')
+        if api_type == 'gpt_image':
+            size_info = f"Model: {task_data['model']} | Size: {task_data['size']} | Variants: {task_data['variants']}"
+        else:
+            size_info = f"Model: {task_data['model']} | Size: {task_data['image_size']} | Ratio: {task_data['aspect_ratio']}"
+        
+        info_layout.addWidget(BodyLabel(size_info))
         info_layout.addWidget(CaptionLabel(task_data["created_at"]))
         
         layout.addLayout(info_layout)
