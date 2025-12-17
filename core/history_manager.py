@@ -29,6 +29,25 @@ class HistoryManager:
             "aspect_ratio": aspect_ratio,
             "image_size": image_size,
             "ref_images": ref_images,
+            "api_type": "nano_banana",
+            "status": "running",
+            "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "result_path": None,
+            "preview_url": None
+        }
+        self.history.insert(0, task) # Add to top
+        self.save_history()
+        return task
+
+    def add_gpt_task(self, task_id, prompt, model, size, variants, ref_images=None):
+        task = {
+            "id": task_id,
+            "prompt": prompt,
+            "model": model,
+            "size": size,
+            "variants": variants,
+            "ref_images": ref_images,
+            "api_type": "gpt_image",
             "status": "running",
             "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "result_path": None,
@@ -39,6 +58,20 @@ class HistoryManager:
         return task
 
     def update_task(self, task_id, status, result_path=None, preview_url=None, failure_reason=None):
+        for task in self.history:
+            if task["id"] == task_id:
+                task["status"] = status
+                if result_path:
+                    task["result_path"] = result_path
+                if preview_url:
+                    task["preview_url"] = preview_url
+                if failure_reason:
+                    task["failure_reason"] = failure_reason
+                self.save_history()
+                return task
+        return None
+
+    def update_gpt_task(self, task_id, status, result_path=None, preview_url=None, failure_reason=None):
         for task in self.history:
             if task["id"] == task_id:
                 task["status"] = status
