@@ -2,7 +2,7 @@ import requests
 import json
 from core.config import cfg
 
-class ApiClient:
+class NanoBananaApiClient:
     def __init__(self):
         pass
 
@@ -88,5 +88,5 @@ class GptImageClient:
         except requests.exceptions.RequestException as e:
             return {"code": -1, "msg": str(e)}
 
-api = ApiClient()
+nano_banana_api = NanoBananaApiClient()
 gpt_image_api = GptImageClient()

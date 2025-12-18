@@ -7,7 +7,7 @@ from qfluentwidgets import (CardWidget, PrimaryPushButton, ComboBox, TextEdit,
                             ImageLabel, StrongBodyLabel, CaptionLabel, InfoBar, InfoBarPosition, FluentIcon, TransparentToolButton)
 
 from core.config import cfg
-from core.api_client import api
+from core.api_client import nano_banana_api
 from core.history_manager import history_mgr
 
 class ImageThumbnail(QWidget):
@@ -562,7 +562,7 @@ class SubmitTaskThread(QThread):
         self.ref_urls = ref_urls
 
     def run(self):
-        res = api.submit_task(self.prompt, self.model, self.ratio, self.size, self.ref_urls)
+        res = nano_banana_api.submit_task(self.prompt, self.model, self.ratio, self.size, self.ref_urls)
         self.finished.emit(res)
 
 class PollTaskThread(QThread):
@@ -580,7 +580,7 @@ class PollTaskThread(QThread):
         error_count = 0
         while True:
             try:
-                res = api.get_task_result(self.task_id)
+                res = nano_banana_api.get_task_result(self.task_id)
                 error_count = 0 # Reset on success
             except Exception as e:
                 error_count += 1
