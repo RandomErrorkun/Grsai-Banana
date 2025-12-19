@@ -53,7 +53,7 @@
    编译产物将位于 `dist/` 目录下。
 
 ## ⚙️ 配置
-首次运行后会在根目录生成 `config.json`，你可以在设置页面或直接修改文件来配置 API Key。
+首次运行后会在根目录生成 `grsai_config.json`，你可以在设置页面或直接修改文件来配置 API Key。
 ![](https://raw.githubusercontent.com/Moeary/pic_bed/main/img/202512121250479.png)
 ## 📝 目录结构
 - `ui/`: 界面代码 (主窗口, 生成页, 历史页, 设置页)

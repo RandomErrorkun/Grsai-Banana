@@ -2,7 +2,7 @@ import json
 import os
 from datetime import datetime
 
-HISTORY_FILE = 'history.json'
+HISTORY_FILE = 'grsai_history.json'
 
 class HistoryManager:
     def __init__(self):

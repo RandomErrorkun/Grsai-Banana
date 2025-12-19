@@ -1,7 +1,7 @@
 import json
 import os
 
-CONFIG_FILE = 'config.json'
+CONFIG_FILE = 'grsai_config.json'
 
 DEFAULT_CONFIG = {
     "api_base_url": "https://grsai.dakka.com.cn",

@@ -616,7 +616,7 @@ class PollTaskThread(QThread):
                         if ".jpg" in img_url: ext = "jpg"
                         if ".jpeg" in img_url: ext = "jpeg"
                         
-                        filename = f"{timestamp}.{ext}"
+                        filename = f"grsai_{timestamp}.{ext}"
                         output_dir = cfg.get("output_folder")
                         if not os.path.exists(output_dir):
                             os.makedirs(output_dir)

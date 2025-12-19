@@ -2,8 +2,8 @@ dist/*
 output/*
 *.pyc
 
-config.json
-history.json
+grsai_config.json
+grsai_history.json
 
 Grsai-Banana.7z
 grsai提示教程.md

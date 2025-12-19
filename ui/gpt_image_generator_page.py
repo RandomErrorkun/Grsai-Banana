@@ -624,9 +624,9 @@ class GptPollTaskThread(QThread):
                             
                             # Add suffix for multiple images
                             if len(results) > 1:
-                                filename = f"{timestamp}_{i+1}.{ext}"
+                                filename = f"grsai_{timestamp}_{i+1}.{ext}"
                             else:
-                                filename = f"{timestamp}.{ext}"
+                                filename = f"grsai_{timestamp}.{ext}"
                                 
                             output_dir = cfg.get("output_folder")
                             if not os.path.exists(output_dir):
