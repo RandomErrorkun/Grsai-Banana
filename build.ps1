@@ -6,7 +6,7 @@ nuitka `
     --standalone `
     --onefile `
     --enable-plugin=pyside6 `
-    --windows-console-mode=attach `
+    --windows-console-mode=disable `
     --windows-icon-from-ico=logo.ico `
     --include-data-file=logo.ico=logo.ico `
     --nofollow-import-to=tkinter `
