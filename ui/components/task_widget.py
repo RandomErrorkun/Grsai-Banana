@@ -8,7 +8,7 @@ from core.model_catalog import VIP_MODELS
 
 class TaskWidget(QFrame):
     VIP_RESTRICTED_MODELS = set(VIP_MODELS)
-    MODERATION_FAILURE_REASONS = {"output_moderation", "input_moderation"}
+    MODERATION_FAILURE_REASONS = {"output_moderation", "input_moderation", "violation"}
 
     retry_requested = Signal(object)
     regenerate_requested = Signal(object)
@@ -35,15 +35,13 @@ class TaskWidget(QFrame):
         
         layout = QHBoxLayout(self)
         layout.setContentsMargins(10, 10, 10, 10)
-        layout.setSpacing(15)
+        layout.setSpacing(8)
         
         self.index_label = StrongBodyLabel(f"#{index}")
         self.index_label.setFixedWidth(40)
         layout.addWidget(self.index_label)
         
-        self.status_label = BodyLabel("Attempt: 1")
-        layout.addWidget(self.status_label, 1)
-        
+        # Progress/Button/Result stack
         self.status_stack = QStackedWidget()
         self.status_stack.setFixedSize(50, 50)
         
@@ -67,6 +65,15 @@ class TaskWidget(QFrame):
         
         self.status_stack.setCurrentIndex(0)
         layout.addWidget(self.status_stack)
+        
+        # Add variants info label (for GPT Image models)
+        self.variants_label = BodyLabel("")
+        self.variants_label.hide()
+        layout.addWidget(self.variants_label)
+        
+        self.status_label = BodyLabel("Attempt: 1")
+        layout.addWidget(self.status_label)
+        
 
     def update_style(self, status="normal"):
         # Base style
@@ -99,6 +106,17 @@ class TaskWidget(QFrame):
         self.status_text = status
         self.status_label.setText(f"Attempt {self.attempt_count + 1}: {status}")
         self.progress_ring.setToolTip(f"Status: {status}")
+    
+    def set_variants_info(self, variants_count, total_images=None):
+        """Display variants information"""
+        if variants_count > 1:
+            if total_images:
+                self.variants_label.setText(f"Variants: {variants_count} | Total Images: {total_images}")
+            else:
+                self.variants_label.setText(f"Variants: {variants_count}")
+            self.variants_label.show()
+        else:
+            self.variants_label.hide()
         
     def set_success(self, filepath):
         self.result_path = filepath
@@ -112,22 +130,25 @@ class TaskWidget(QFrame):
             self.status_label.setText(f"✓ Success on retry {self.attempt_count}")
         
         # Decode directly to icon size, avoid loading full image into memory.
-        try:
-            reader = QImageReader(filepath)
-            reader.setAutoTransform(True)
+        if self.params.get("media_type") == "video":
+            self.result_btn.setIcon(FluentIcon.VIDEO)
+        else:
+            try:
+                reader = QImageReader(filepath)
+                reader.setAutoTransform(True)
 
-            source_size = reader.size()
-            if source_size.isValid() and source_size.width() > 0 and source_size.height() > 0:
-                reader.setScaledSize(source_size.scaled(80, 80, Qt.KeepAspectRatio))
-            else:
-                reader.setScaledSize(QSize(80, 80))
+                source_size = reader.size()
+                if source_size.isValid() and source_size.width() > 0 and source_size.height() > 0:
+                    reader.setScaledSize(source_size.scaled(80, 80, Qt.KeepAspectRatio))
+                else:
+                    reader.setScaledSize(QSize(80, 80))
 
-            image = reader.read()
-            if not image.isNull():
-                icon = QIcon(QPixmap.fromImage(image))
-                self.result_btn.setIcon(icon)
-        except Exception as e:
-            print(f"[TaskWidget] Error loading thumbnail: {e}")
+                image = reader.read()
+                if not image.isNull():
+                    icon = QIcon(QPixmap.fromImage(image))
+                    self.result_btn.setIcon(icon)
+            except Exception as e:
+                print(f"[TaskWidget] Error loading thumbnail: {e}")
         
         self.result_btn.setContextMenuPolicy(Qt.CustomContextMenu)
         self.result_btn.customContextMenuRequested.connect(self.show_result_menu)

@@ -8,14 +8,19 @@ from qfluentwidgets import (CardWidget, PrimaryPushButton, ComboBox, CaptionLabe
 from core.config import cfg
 from core.i18n import tr
 from core.model_catalog import (
-    TAB_BANANA_1,
     TAB_BANANA_PRO,
     TAB_GPT_IMAGE,
-    GPT_IMAGE_SIZE_OPTIONS,
     TAB_MODELS,
     NANO_IMAGE_SIZE_OPTIONS,
     VIP_MODELS,
     LEGACY_IMAGE_MODEL_ALIASES,
+    GPT_PIXEL_TIERS,
+    GPT_TRANSPARENT_MODELS,
+    is_gpt_pixel_only,
+    nano_ratio_options,
+    gpt_ratio_options,
+    gpt_quality_options,
+    gpt_pixel_value,
 )
 from core.task_manager import task_manager
 from ui.components.prompt_widget import PromptWidget
@@ -32,8 +37,30 @@ class GeneratorPage(QWidget):
         super().__init__()
         self.setObjectName("GeneratorPage")
         self.task_counter = 0
-        self.current_tab_key = TAB_BANANA_1
+        self.current_tab_key = TAB_BANANA_PRO
         self.initUI()
+
+    @staticmethod
+    def _make_field(caption_label, editor_widget):
+        """标题 + 编辑控件的纵向字段单元"""
+        box = QWidget()
+        layout = QVBoxLayout(box)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+        layout.addWidget(caption_label)
+        layout.addWidget(editor_widget)
+        return box
+
+    @staticmethod
+    def _make_row(first, second):
+        """两个字段单元等宽排成一行"""
+        row = QWidget()
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(12)
+        layout.addWidget(first, 1)
+        layout.addWidget(second, 1)
+        return row
 
     def initUI(self):
         main_layout = QHBoxLayout(self)
@@ -54,57 +81,87 @@ class GeneratorPage(QWidget):
         
         # 1. Tabs
         self.model_tabs = SegmentedWidget()
-        self.model_tabs.addItem(TAB_BANANA_1, tr("generator.tab.banana_1"))
         self.model_tabs.addItem(TAB_BANANA_PRO, tr("generator.tab.banana_pro"))
         self.model_tabs.addItem(TAB_GPT_IMAGE, tr("generator.tab.gpt_image"))
         
         # Load last selected tab or default
-        last_tab = self._normalize_tab_key(cfg.get("last_tab", TAB_BANANA_1))
-        if last_tab in [TAB_BANANA_1, TAB_BANANA_PRO, TAB_GPT_IMAGE]:
+        last_tab = self._normalize_tab_key(cfg.get("last_tab", TAB_BANANA_PRO))
+        if last_tab in [TAB_BANANA_PRO, TAB_GPT_IMAGE]:
             self.model_tabs.setCurrentItem(last_tab)
         else:
-            self.model_tabs.setCurrentItem(TAB_BANANA_1)
+            self.model_tabs.setCurrentItem(TAB_BANANA_PRO)
             
         self.model_tabs.currentItemChanged.connect(self.on_tab_changed)
         settings_layout_v.addWidget(self.model_tabs)
         
-        # 2. Settings Card
+        # 2. Settings Card（参数项两栏排列，压缩纵向高度）
         self.settings_card = CardWidget()
         # Unify card background color
         self.update_card_style(self.settings_card)
         qconfig.themeChanged.connect(lambda: self.update_card_style(self.settings_card))
         settings_inner = QVBoxLayout(self.settings_card)
-        
+
         # Model Selector (Specific to tab)
         self.model_caption = CaptionLabel(tr("generator.model"))
-        settings_inner.addWidget(self.model_caption)
         self.model_combo = ComboBox()
         self.model_combo.currentTextChanged.connect(self.on_model_changed)
-        settings_inner.addWidget(self.model_combo)
+        self.model_box = self._make_field(self.model_caption, self.model_combo)
 
-        # Aspect Ratio (Banana)
+        # Variants (GPT)
+        self.variants_label = CaptionLabel(tr("generator.variants"))
+        self.variants_combo = ComboBox()
+        self.variants_combo.addItems(["1", "2"])
+        self.variants_combo.setCurrentText("1")
+        self.variants_box = self._make_field(self.variants_label, self.variants_combo)
+
+        self.model_row = self._make_row(self.model_box, self.variants_box)
+        settings_inner.addWidget(self.model_row)
+
+        # Aspect Ratio + Image Size (Banana)
         self.ratio_label = CaptionLabel(tr("generator.aspect_ratio"))
-        settings_inner.addWidget(self.ratio_label)
         self.ratio_combo = ComboBox()
-        self.ratio_combo.addItems(["auto", "1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3", "5:4", "4:5", "21:9"])
-        self.ratio_combo.setCurrentText(cfg.get("nano_banana_aspect_ratio", "auto"))
-        settings_inner.addWidget(self.ratio_combo)
+        self._set_combo_items(self.ratio_combo, nano_ratio_options("nano-banana-2"), cfg.get("nano_banana_aspect_ratio", "auto"))
+        self.ratio_box = self._make_field(self.ratio_label, self.ratio_combo)
 
-        # Image Size (Banana Pro)
         self.size_label = CaptionLabel(tr("generator.image_size"))
-        settings_inner.addWidget(self.size_label)
         self.size_combo = ComboBox()
         self.size_combo.addItems(["1K", "2K", "4K"])
         self.size_combo.setCurrentText(cfg.get("nano_banana_image_size", "1K"))
-        settings_inner.addWidget(self.size_combo)
+        self.size_box = self._make_field(self.size_label, self.size_combo)
 
-        # Size (GPT)
-        self.gpt_size_label = CaptionLabel(tr("generator.gpt_size"))
-        settings_inner.addWidget(self.gpt_size_label)
-        self.gpt_size_combo = ComboBox()
-        self.gpt_size_combo.addItems(GPT_IMAGE_SIZE_OPTIONS)
-        self.gpt_size_combo.setCurrentText(cfg.get("gpt_image_size", "auto"))
-        settings_inner.addWidget(self.gpt_size_combo)
+        self.nano_row = self._make_row(self.ratio_box, self.size_box)
+        settings_inner.addWidget(self.nano_row)
+
+        # Aspect Ratio + Quality (GPT)
+        self.gpt_ratio_label = CaptionLabel(tr("generator.gpt_size"))
+        self.gpt_ratio_combo = ComboBox()
+        self._set_combo_items(self.gpt_ratio_combo, gpt_ratio_options("gpt-image-2"), cfg.get("gpt_image_size", "auto"))
+        self.gpt_ratio_box = self._make_field(self.gpt_ratio_label, self.gpt_ratio_combo)
+
+        self.gpt_quality_label = CaptionLabel(tr("generator.gpt_quality"))
+        self.gpt_quality_combo = ComboBox()
+        self.gpt_quality_box = self._make_field(self.gpt_quality_label, self.gpt_quality_combo)
+
+        self.gpt_row = self._make_row(self.gpt_ratio_box, self.gpt_quality_box)
+        settings_inner.addWidget(self.gpt_row)
+
+        # Resolution Tier + Transparent background (GPT vip models)
+        self.gpt_tier_label = CaptionLabel(tr("generator.gpt_tier"))
+        self.gpt_tier_combo = ComboBox()
+        self._set_combo_items(self.gpt_tier_combo, GPT_PIXEL_TIERS, cfg.get("gpt_image_tier", "1K"))
+        self.gpt_tier_box = self._make_field(self.gpt_tier_label, self.gpt_tier_combo)
+
+        self.gpt_transparent_cb = CheckBox(tr("generator.transparent_bg"))
+        self.gpt_transparent_cb.setChecked(cfg.get("gpt_transparent_background", False))
+        transparent_holder = QWidget()
+        transparent_layout = QVBoxLayout(transparent_holder)
+        transparent_layout.setContentsMargins(0, 0, 0, 0)
+        transparent_layout.setSpacing(4)
+        transparent_layout.addStretch()
+        transparent_layout.addWidget(self.gpt_transparent_cb)
+
+        self.gpt_vip_row = self._make_row(self.gpt_tier_box, transparent_holder)
+        settings_inner.addWidget(self.gpt_vip_row)
         
         # Auto Retry and Parallel Tasks
         retry_parallel_layout = QHBoxLayout()
@@ -253,10 +310,8 @@ class GeneratorPage(QWidget):
         for tab_name, models in self.TAB_MODELS.items():
             if model_name in models:
                 return tab_name
-        if model_name.startswith("nano-banana-pro"):
-            return TAB_BANANA_PRO
         if model_name.startswith("nano-banana"):
-            return TAB_BANANA_1
+            return TAB_BANANA_PRO
         return TAB_GPT_IMAGE
 
     def _set_combo_items(self, combo, items, preferred=None):
@@ -274,14 +329,13 @@ class GeneratorPage(QWidget):
             return tab_key_or_text
 
         tab_display_map = {
-            tr("generator.tab.banana_1"): TAB_BANANA_1,
             tr("generator.tab.banana_pro"): TAB_BANANA_PRO,
             tr("generator.tab.gpt_image"): TAB_GPT_IMAGE,
-            "Banana 1": TAB_BANANA_1,
+            "Banana 1": TAB_BANANA_PRO,
             "Banana Pro": TAB_BANANA_PRO,
             "GPT Image": TAB_GPT_IMAGE,
         }
-        return tab_display_map.get(tab_key_or_text, TAB_BANANA_1)
+        return tab_display_map.get(tab_key_or_text, TAB_BANANA_PRO)
 
     def _update_auto_retry_hint(self, model_name):
         if model_name in self.VIP_MODELS:
@@ -325,28 +379,47 @@ class GeneratorPage(QWidget):
     def on_model_changed(self, model_name):
         if not model_name: return
         model_name = self.LEGACY_MODEL_ALIASES.get(model_name, model_name)
-        
-        tab_name = getattr(self, "current_tab_key", TAB_BANANA_1)
+
+        tab_name = getattr(self, "current_tab_key", TAB_BANANA_PRO)
         cfg.set(f"last_model_tab_{tab_name}", model_name)
 
         is_nano = self._is_nano_model(model_name)
         is_completion = self._is_completion_model(model_name)
         size_options = self.NANO_IMAGE_SIZE_OPTIONS.get(model_name)
 
-        self.ratio_label.setVisible(is_nano)
-        self.ratio_combo.setVisible(is_nano)
-
-        show_size = bool(size_options)
-        self.size_label.setVisible(show_size)
-        self.size_combo.setVisible(show_size)
-        if show_size:
+        # Banana 行：比例 + 尺寸
+        self.nano_row.setVisible(is_nano)
+        if is_nano:
+            selected_ratio = cfg.get("nano_banana_aspect_ratio", "auto")
+            self._set_combo_items(self.ratio_combo, nano_ratio_options(model_name), selected_ratio)
+        self.size_box.setVisible(is_nano and bool(size_options))
+        if size_options:
             selected_size = cfg.get("nano_banana_image_size", "1K")
             if selected_size not in size_options:
                 selected_size = size_options[0]
             self._set_combo_items(self.size_combo, size_options, selected_size)
 
-        self.gpt_size_label.setVisible(is_completion)
-        self.gpt_size_combo.setVisible(is_completion)
+        # 变体（GPT）
+        self.variants_box.setVisible(is_completion)
+
+        # GPT 行：比例 + 质量
+        self.gpt_row.setVisible(is_completion)
+        if is_completion:
+            selected_gpt_ratio = cfg.get("gpt_image_size", "auto")
+            self._set_combo_items(self.gpt_ratio_combo, gpt_ratio_options(model_name), selected_gpt_ratio)
+
+            quality_options = gpt_quality_options(model_name)
+            show_quality = len(quality_options) > 1
+            self.gpt_quality_box.setVisible(show_quality)
+            if show_quality:
+                selected_quality = cfg.get("gpt_image_quality", quality_options[0])
+                self._set_combo_items(self.gpt_quality_combo, quality_options, selected_quality)
+
+        # GPT vip 行：像素档位 + 透明背景
+        pixel_only = is_completion and is_gpt_pixel_only(model_name)
+        self.gpt_vip_row.setVisible(pixel_only)
+        if pixel_only:
+            self._set_combo_items(self.gpt_tier_combo, GPT_PIXEL_TIERS, cfg.get("gpt_image_tier", "1K"))
 
         self._update_auto_retry_hint(model_name)
 
@@ -360,10 +433,13 @@ class GeneratorPage(QWidget):
             return
 
         model = self.model_combo.currentText()
-        
+
         # Get params based on active model
         ratio = "auto"
         size = "1K"
+        variants = 1
+        quality = None
+        background = None
 
         if self._is_nano_model(model):
             ratio = self.ratio_combo.currentText()
@@ -373,14 +449,33 @@ class GeneratorPage(QWidget):
                 size = self.size_combo.currentText()
                 cfg.set("nano_banana_image_size", size)
         elif self._is_completion_model(model):
-            size = self.gpt_size_combo.currentText()
-            cfg.set("gpt_image_size", size)
+            variants = int(self.variants_combo.currentText())
+            gpt_ratio = self.gpt_ratio_combo.currentText()
+            cfg.set("gpt_image_size", gpt_ratio)
+            size = gpt_ratio
+
+            if is_gpt_pixel_only(model):
+                # vip 系模型只接受像素值，按比例 + 档位换算
+                tier = self.gpt_tier_combo.currentText()
+                cfg.set("gpt_image_tier", tier)
+                ratio = gpt_pixel_value(gpt_ratio, tier)
+            else:
+                ratio = gpt_ratio
+
+            quality_options = gpt_quality_options(model)
+            if len(quality_options) > 1:
+                quality = self.gpt_quality_combo.currentText()
+                cfg.set("gpt_image_quality", quality)
+
+            if model in GPT_TRANSPARENT_MODELS and self.gpt_transparent_cb.isChecked():
+                background = "transparent"
+            cfg.set("gpt_transparent_background", self.gpt_transparent_cb.isChecked())
 
         parallel_count = self.parallel_slider.value()
-        
+
         cfg.set("auto_retry_on_failure", self.auto_retry_cb.isChecked())
         cfg.set("parallel_tasks", parallel_count)
-        
+
         ref_urls = []
         for img_path in self.drop_area.image_paths:
             if os.path.isfile(img_path):
@@ -391,40 +486,48 @@ class GeneratorPage(QWidget):
             "ratio": ratio,
             "size": size,
             "ref_urls": ref_urls,
+            "variants": 1,
+            "quality": quality,
+            "background": background,
         }
-        
-        for _ in range(parallel_count):
+
+        # 新接口不提供 variants 参数，多变体改为提交多个独立任务
+        total_tasks = max(parallel_count * variants, 1)
+        for _ in range(total_tasks):
             self.create_task(prompt, params)
 
     def create_task(self, prompt, params):
         self.task_counter += 1
         task_widget = TaskWidget(self.task_counter, prompt, params)
         task_widget.auto_retry = self.auto_retry_cb.isChecked()
-        
+
         task_widget.retry_requested.connect(self.retry_task)
         task_widget.regenerate_requested.connect(self.regenerate_task)
-        
+
         self.task_list_widget.add_task(task_widget)
         self.start_worker(task_widget)
 
     def start_worker(self, task_widget):
         try:
             worker = task_manager.create_worker(
-                task_widget.prompt, 
-                task_widget.params["model"], 
-                task_widget.params["ratio"], 
-                task_widget.params["size"], 
-                task_widget.params["ref_urls"]
+                task_widget.prompt,
+                task_widget.params["model"],
+                task_widget.params["ratio"],
+                task_widget.params["size"],
+                task_widget.params["ref_urls"],
+                variants=task_widget.params.get("variants", 1),
+                quality=task_widget.params.get("quality"),
+                background=task_widget.params.get("background"),
             )
-            
+
             task_widget.progress_ring.show()
             task_widget.progress_ring.setValue(0)
             task_widget.status_label.setText(f"Attempt {task_widget.attempt_count + 1}: Starting...")
-            
+
             worker.progress_signal.connect(task_widget.update_progress)
             worker.finished_signal.connect(lambda s, r, m: self.on_worker_finished(task_widget, s, r, m))
             worker.finished.connect(lambda: self.cleanup_worker(task_widget))
-            
+
             task_manager.register_worker(task_widget, worker)
             worker.start()
         except Exception as e:

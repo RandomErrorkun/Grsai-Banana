@@ -1,7 +1,7 @@
 import os
 from datetime import datetime
 
-from PySide6.QtCore import Qt, Signal, QSize
+from PySide6.QtCore import Qt, Signal, QSize, QTimer
 from PySide6.QtGui import QDragEnterEvent, QDropEvent, QImageReader, QPixmap
 from PySide6.QtWidgets import QApplication, QFileDialog, QFrame, QLabel, QSizePolicy, QVBoxLayout, QWidget
 from qfluentwidgets import InfoBar, InfoBarPosition, SingleDirectionScrollArea, TransparentToolButton, FluentIcon, isDarkTheme, qconfig
@@ -72,7 +72,10 @@ class ImageThumbnail(QWidget):
 
     def _available_width(self):
         if self.drop_area and hasattr(self.drop_area, "scroll_area"):
-            viewport = self.drop_area.scroll_area.viewport()
+            scroll = self.drop_area.scroll_area
+            # 隐藏状态下 viewport 尚未布局（宽度是默认值），不可采信，
+            # 否则启动后第一张图的预览会按错误宽度计算导致溢出
+            viewport = scroll.viewport() if scroll.isVisible() else None
             if viewport is not None and viewport.width() > 0:
                 return max(viewport.width() - 8, 100)
         if self.drop_area:
@@ -103,10 +106,12 @@ class ImageDropArea(QFrame):
     SUPPORTED_EXTENSIONS = (".png", ".jpg", ".jpeg", ".webp", ".bmp")
     MAX_IMAGES = 14
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, max_images=None):
         super().__init__(parent)
         self.setAcceptDrops(True)
         self.setFrameStyle(QFrame.StyledPanel | QFrame.Sunken)
+        if max_images is not None:
+            self.MAX_IMAGES = int(max_images)
 
         self.layout = QVBoxLayout(self)
         self.layout.setContentsMargins(10, 10, 10, 10)
@@ -145,7 +150,7 @@ class ImageDropArea(QFrame):
         qconfig.themeChanged.connect(self.update_style)
 
     def update_texts(self):
-        self.label.setText(tr("drop.placeholder"))
+        self.label.setText(tr("drop.placeholder", max=self.MAX_IMAGES))
 
     def update_style(self):
         if isDarkTheme():
@@ -185,7 +190,7 @@ class ImageDropArea(QFrame):
             if not image.isNull():
                 input_dir = os.path.join(os.getcwd(), "input")
                 os.makedirs(input_dir, exist_ok=True)
-                temp_path = os.path.join(input_dir, f"clipboard_{int(datetime.now().timestamp())}.png")
+                temp_path = os.path.join(input_dir, f"grsai_clipboard_{int(datetime.now().timestamp())}.png")
                 image.save(temp_path, "PNG")
                 added = self.add_images([temp_path], show_limit_warning=True)
                 if added:
@@ -259,7 +264,7 @@ class ImageDropArea(QFrame):
             if show_limit_warning:
                 InfoBar.warning(
                     title=tr("common.limit_reached"),
-                    content=tr("drop.msg.limit_reached"),
+                    content=tr("drop.msg.limit_reached", max=self.MAX_IMAGES),
                     parent=self,
                     position=InfoBarPosition.TOP_RIGHT,
                 )
@@ -296,7 +301,7 @@ class ImageDropArea(QFrame):
         if overflow_count > 0 and show_limit_warning:
             InfoBar.warning(
                 title=tr("common.limit_reached"),
-                content=tr("drop.msg.limit_skipped", count=overflow_count),
+                content=tr("drop.msg.limit_skipped", max=self.MAX_IMAGES, count=overflow_count),
                 parent=self,
                 position=InfoBarPosition.TOP_RIGHT,
             )
@@ -335,6 +340,15 @@ class ImageDropArea(QFrame):
         if self.image_paths:
             self.label.hide()
             self.scroll_area.show()
+            # 滚动区从隐藏转为显示后 viewport 才获得真实宽度，延迟刷新一次缩略图尺寸
+            QTimer.singleShot(0, self._refresh_thumbnail_sizes)
         else:
             self.label.show()
             self.scroll_area.hide()
+
+    def _refresh_thumbnail_sizes(self):
+        for i in range(self.scroll_layout.count()):
+            item = self.scroll_layout.itemAt(i)
+            widget = item.widget() if item else None
+            if isinstance(widget, ImageThumbnail):
+                widget.update_size(force=True)

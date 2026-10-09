@@ -3,6 +3,7 @@ import os
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QFrame,
     QHBoxLayout,
     QLineEdit,
     QListWidget,
@@ -21,6 +22,7 @@ from qfluentwidgets import (
     InfoBar,
     InfoBarPosition,
     PrimaryPushButton,
+    ScrollArea,
     SegmentedWidget,
     StrongBodyLabel,
     TextEdit,
@@ -37,13 +39,19 @@ from core.model_catalog import (
     CHAT_MODELS,
     COMIC_IMAGE_MODELS,
     COMPLETION_MODELS,
-    GPT_IMAGE_SIZE_OPTIONS,
     LEGACY_IMAGE_MODEL_ALIASES,
     NANO_IMAGE_SIZE_OPTIONS,
+    is_gpt_pixel_only,
+    gpt_ratio_options,
+    gpt_pixel_value,
 )
 from core.task_manager import task_manager
 from ui.components.image_drop_area import ImageDropArea
 from ui.components.task_widget import TaskListWidget, TaskWidget
+
+
+def _gpt_size_options(model_name):
+    return gpt_ratio_options(model_name)
 
 
 def _parse_reference_targets(text):
@@ -233,6 +241,7 @@ class ComicPage(QWidget):
         self.project_name_edit.setText(cfg.get("comic_last_project", ""))
         project_name_row.addWidget(self.project_name_edit, 1)
         self.save_project_btn = PrimaryPushButton(tr("comic.save_project"))
+        self.save_project_btn.setMinimumWidth(110)
         self.save_project_btn.clicked.connect(lambda: self.save_project_state(show_feedback=True))
         project_name_row.addWidget(self.save_project_btn)
         project_layout.addLayout(project_name_row)
@@ -241,6 +250,7 @@ class ComicPage(QWidget):
         self.project_combo = ComboBox()
         project_load_row.addWidget(self.project_combo, 1)
         self.load_project_btn = PrimaryPushButton(tr("comic.load_project"))
+        self.load_project_btn.setMinimumWidth(110)
         self.load_project_btn.clicked.connect(self.load_selected_project)
         project_load_row.addWidget(self.load_project_btn)
         self.refresh_project_btn = TransparentToolButton(FluentIcon.SYNC)
@@ -349,12 +359,23 @@ class ComicPage(QWidget):
 
         buttons_row = QHBoxLayout()
         self.plan_btn = PrimaryPushButton(tr("comic.plan_story"))
+        self.plan_btn.setMinimumWidth(140)
         self.plan_btn.clicked.connect(self.on_plan_story)
         buttons_row.addWidget(self.plan_btn)
         self.generate_all_btn = PrimaryPushButton(tr("comic.generate_all"))
+        self.generate_all_btn.setMinimumWidth(140)
         self.generate_all_btn.clicked.connect(self.on_generate_all)
         buttons_row.addWidget(self.generate_all_btn)
         left_layout.addLayout(buttons_row)
+
+        # 左栏内容较多（项目卡/设置/编辑器/参考图），包进纵向滚动区，
+        # 避免其最小高度把整个窗口的最小尺寸顶高到无法调整
+        left_scroll = ScrollArea()
+        left_scroll.setWidgetResizable(True)
+        left_scroll.setFrameShape(QFrame.NoFrame)
+        left_scroll.setStyleSheet("QScrollArea { border: none; background-color: transparent; }")
+        left_panel.setStyleSheet("background-color: transparent;")
+        left_scroll.setWidget(left_panel)
 
         center_panel = QWidget()
         center_layout = QVBoxLayout(center_panel)
@@ -365,11 +386,13 @@ class ComicPage(QWidget):
         pages_header.addWidget(StrongBodyLabel(tr("comic.pages_title")))
         pages_header.addStretch()
         self.plan_status_label = CaptionLabel(tr("comic.no_pages"))
+        self.plan_status_label.setWordWrap(True)
         pages_header.addWidget(self.plan_status_label)
         center_layout.addLayout(pages_header)
 
         self.pages_empty_label = BodyLabel(tr("comic.no_pages"))
         self.pages_empty_label.setAlignment(Qt.AlignCenter)
+        self.pages_empty_label.setWordWrap(True)
         center_layout.addWidget(self.pages_empty_label, 1)
 
         self.pages_list = ComicPageListWidget()
@@ -388,7 +411,7 @@ class ComicPage(QWidget):
         self.task_list_widget = TaskListWidget()
         right_layout.addWidget(self.task_list_widget, 1)
 
-        main_layout.addWidget(left_panel, 3)
+        main_layout.addWidget(left_scroll, 3)
         main_layout.addWidget(center_panel, 4)
         main_layout.addWidget(right_panel, 2)
 
@@ -495,9 +518,8 @@ class ComicPage(QWidget):
 
         self.ratio_label.setVisible(not is_completion)
         self.ratio_combo.setVisible(not is_completion)
-        self.size_label.setText(tr("comic.gpt_size") if is_completion else tr("comic.image_size"))
 
-        size_options = GPT_IMAGE_SIZE_OPTIONS if is_completion else NANO_IMAGE_SIZE_OPTIONS.get(model_name)
+        size_options = _gpt_size_options(model_name) if is_completion else NANO_IMAGE_SIZE_OPTIONS.get(model_name)
         has_size_options = bool(size_options)
         self.size_label.setVisible(has_size_options)
         self.size_combo.setVisible(has_size_options)
@@ -739,17 +761,30 @@ class ComicPage(QWidget):
 
     def _build_image_params(self, page_data):
         model = LEGACY_IMAGE_MODEL_ALIASES.get(self.image_model_combo.currentText(), self.image_model_combo.currentText())
-        size = self.size_combo.currentText() if self.size_combo.isVisible() else "1K"
-        ratio = "auto" if self._is_completion_model(model) else self.ratio_combo.currentText()
         page_number = int(page_data.get("page_number", 1))
+
+        if self._is_completion_model(model):
+            # GPT 系模型：尺寸下拉框此时保存的是宽高比
+            gpt_ratio = self.size_combo.currentText() if self.size_combo.isVisible() else "auto"
+            if is_gpt_pixel_only(model):
+                # vip 系模型只接受像素值，漫画页默认按 1K 档位换算
+                ratio = gpt_pixel_value(gpt_ratio, "1K")
+            else:
+                ratio = gpt_ratio
+            size = "auto"
+        else:
+            ratio = self.ratio_combo.currentText()
+            size = self.size_combo.currentText() if self.size_combo.isVisible() else "1K"
+
         return {
             "model": model,
             "ratio": ratio,
             "size": size,
             "ref_urls": [path for path in self.drop_area.image_paths if os.path.isfile(path)],
+            "variants": 1,
             "page_number": page_number,
             "output_dir": self._project_pages_dir(),
-            "filename_prefix": f"page_{page_number:02d}",
+            "filename_prefix": f"grsai_page_{page_number:02d}",
         }
 
     def _build_final_prompt(self, page_data):
@@ -796,6 +831,7 @@ class ComicPage(QWidget):
                 task_widget.params["ratio"],
                 task_widget.params["size"],
                 task_widget.params["ref_urls"],
+                variants=task_widget.params.get("variants", 1),
                 output_dir=task_widget.params.get("output_dir"),
                 filename_prefix=task_widget.params.get("filename_prefix"),
             )

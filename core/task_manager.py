@@ -10,14 +10,30 @@ from PySide6.QtCore import QThread, Signal
 from core.config import cfg
 from core.api_client import api
 from core.history_manager import history_mgr
+from core.model_catalog import VIDEO_MODEL_SET
+
+
+RESULT_URL_EXTENSIONS = (
+    ".jpg", ".jpeg", ".png", ".webp", ".gif", ".mp4", ".webm", ".mov", ".avi", ".mkv",
+)
+
+
+def _extension_for_url(url, default_ext):
+    path = (url or "").lower().split("?")[0]
+    for ext in RESULT_URL_EXTENSIONS:
+        if path.endswith(ext):
+            return ext.lstrip(".")
+    return default_ext
 
 
 class TaskWorker(QThread):
     """Worker thread for submitting and polling tasks"""
     progress_signal = Signal(int, str)
     finished_signal = Signal(bool, str, str)  # success, result_path/msg, failure_reason
-    
-    def __init__(self, prompt, model, ratio, size, ref_urls, task_id=None, output_dir=None, filename_prefix=None):
+
+    def __init__(self, prompt, model, ratio, size, ref_urls, task_id=None, variants=1,
+                 output_dir=None, filename_prefix=None, quality=None, background=None,
+                 duration=None, seed=None, ref_audios=None):
         super().__init__()
         self.prompt = prompt
         self.model = model
@@ -25,8 +41,14 @@ class TaskWorker(QThread):
         self.size = size
         self.ref_urls = ref_urls
         self.task_id = task_id
+        self.variants = variants
         self.output_dir = output_dir
         self.filename_prefix = filename_prefix
+        self.quality = quality
+        self.background = background
+        self.duration = duration
+        self.seed = seed
+        self.ref_audios = ref_audios
         self.is_running = True
         self.setTerminationEnabled(True)
 
@@ -34,19 +56,30 @@ class TaskWorker(QThread):
         try:
             if not self.task_id:
                 try:
-                    res = api.submit_task(self.prompt, self.model, self.ratio, self.size, self.ref_urls)
+                    res = api.submit_task(
+                        self.prompt, self.model, self.ratio, self.size, self.ref_urls,
+                        variants=self.variants,
+                        quality=self.quality,
+                        background=self.background,
+                        duration=self.duration,
+                        seed=self.seed,
+                        ref_audios=self.ref_audios,
+                    )
                     if res.get("code") != 0:
                         self.finished_signal.emit(False, res.get("msg", "Submission failed"), "Submission failed")
                         return
                     self.task_id = res["data"]["id"]
                     # Add to history
                     history_mgr.add_task(
-                        self.task_id, 
-                        self.prompt, 
+                        self.task_id,
+                        self.prompt,
                         self.model,
                         self.ratio,
                         self.size,
-                        self.ref_urls
+                        self.ref_urls,
+                        duration=self.duration,
+                        seed=self.seed,
+                        ref_audios=self.ref_audios,
                     )
                 except Exception as e:
                     print(f"[TaskWorker] Submission error: {e}")
@@ -58,14 +91,16 @@ class TaskWorker(QThread):
                 # Check stop flag at loop start
                 if not self.is_running:
                     return
-                    
+
                 try:
                     res = api.get_task_result(self.task_id)
+                    if res.get("code") != 0:
+                        raise RuntimeError(res.get("msg", "Unknown error"))
                     error_count = 0
                 except Exception as e:
                     error_count += 1
                     print(f"[TaskWorker] API call error (attempt {error_count}): {e}")
-                    if error_count > 5:
+                    if error_count > 10:
                         self.finished_signal.emit(False, f"Network error: {str(e)}", "Network Error")
                         return
                     # Sleep in shorter intervals to respond to stop signals quickly
@@ -76,57 +111,50 @@ class TaskWorker(QThread):
                     continue
 
                 try:
-                    if res.get("code") != 0:
-                        if res.get("code") == -22:
-                            # Task not ready yet, sleep in shorter intervals
-                            for _ in range(4):
-                                if not self.is_running:
-                                    return
-                                time.sleep(0.5)
-                            continue
-                        self.finished_signal.emit(False, res.get("msg", "Unknown error"), "API Error")
-                        return
-
                     data = res.get("data", {})
                     status = data.get("status")
                     progress = data.get("progress", 0)
-                    
+
                     if not self.is_running:
                         return
-                    
-                    self.progress_signal.emit(progress, status)
+
+                    self.progress_signal.emit(int(progress), status)
 
                     if status == "succeeded":
                         results = data.get("results", [])
                         if results:
+                            # Handle multiple images (variants)
                             downloaded_files = []
                             first_file = None
-                            
+
                             for idx, result in enumerate(results):
                                 img_url = result.get("url")
                                 if not img_url:
                                     continue
-                                    
+
                                 try:
-                                    img_data = requests.get(img_url, timeout=30).content
+                                    img_data = requests.get(img_url, timeout=120).content
                                     timestamp = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
-                                    ext = "png"
-                                    if ".jpg" in img_url: ext = "jpg"
-                                    if ".jpeg" in img_url: ext = "jpeg"
-                                    
+                                    default_ext = "mp4" if self.model in VIDEO_MODEL_SET else "png"
+                                    ext = _extension_for_url(img_url, default_ext)
+
                                     output_dir = self.output_dir or cfg.get("output_folder")
                                     if not os.path.exists(output_dir):
                                         os.makedirs(output_dir)
 
                                     prefix = (self.filename_prefix or "").strip()
-                                    base_stem = f"{prefix}_{timestamp}" if prefix else timestamp
-                                    
+                                    # Add "grsai_" prefix to all saved images
+                                    base_stem = f"grsai_{prefix}_{timestamp}" if prefix else f"grsai_{timestamp}"
+
+                                    # Generate filename with conflict resolution
                                     if len(results) > 1:
+                                        # Multiple images from variants - use variant index
                                         filename = f"{base_stem}_{idx + 1}.{ext}"
                                     else:
+                                        # Single image - check for conflicts with other concurrent tasks
                                         base_filename = f"{base_stem}.{ext}"
                                         filepath = os.path.join(output_dir, base_filename)
-                                        
+
                                         # Check for file conflicts and add suffix if needed
                                         if os.path.exists(filepath):
                                             counter = 1
@@ -135,17 +163,17 @@ class TaskWorker(QThread):
                                             filename = f"{base_stem}_{counter}.{ext}"
                                         else:
                                             filename = base_filename
-                                    
+
                                     filepath = os.path.join(output_dir, filename)
                                     with open(filepath, "wb") as f:
                                         f.write(img_data)
-                                    
+
                                     downloaded_files.append(filepath)
                                     if idx == 0:
                                         first_file = filepath
                                 except Exception as e:
-                                    print(f"[TaskWorker] Download error for image {idx}: {e}")
-                            
+                                    print(f"[TaskWorker] Download error for result {idx}: {e}")
+
                             if downloaded_files:
                                 # Update history with first file, but all files are downloaded to output folder
                                 history_mgr.update_task(self.task_id, "succeeded", result_path=first_file, preview_url=results[0].get("url"))
@@ -158,13 +186,15 @@ class TaskWorker(QThread):
                             self.finished_signal.emit(False, "No results found", "No Results")
                         return
 
-                    elif status == "failed":
-                        reason = data.get("failure_reason", "Unknown")
+                    elif status in ("failed", "violation"):
+                        reason = data.get("failure_reason")
+                        if not reason:
+                            reason = "violation" if status == "violation" else "Unknown"
                         error_msg = data.get("error", "")
                         display_reason = reason
                         if error_msg:
                             display_reason = f"{reason}: {error_msg}"
-                        history_mgr.update_task(self.task_id, "failed", failure_reason=reason, error_message=error_msg)
+                        history_mgr.update_task(self.task_id, status, failure_reason=reason, error_message=error_msg)
                         self.finished_signal.emit(False, display_reason, reason)
                         return
                 except Exception as e:
@@ -183,18 +213,20 @@ class TaskWorker(QThread):
                 self.finished_signal.emit(False, str(e), "Unexpected Error")
             except:
                 pass
-            
+
     def stop(self):
         self.is_running = False
 
 
 class TaskManager:
     """Manages all active tasks and workers"""
-    
+
     def __init__(self):
         self.active_workers = {}  # task_widget -> worker
-    
-    def create_worker(self, prompt, model, ratio, size, ref_urls, output_dir=None, filename_prefix=None):
+
+    def create_worker(self, prompt, model, ratio, size, ref_urls, variants=1, output_dir=None,
+                      filename_prefix=None, quality=None, background=None, duration=None,
+                      seed=None, ref_audios=None):
         """Create and return a new TaskWorker"""
         worker = TaskWorker(
             prompt,
@@ -202,18 +234,24 @@ class TaskManager:
             ratio,
             size,
             ref_urls,
+            variants=variants,
             output_dir=output_dir,
             filename_prefix=filename_prefix,
+            quality=quality,
+            background=background,
+            duration=duration,
+            seed=seed,
+            ref_audios=ref_audios,
         )
         return worker
-    
+
     def stop_worker(self, task_widget):
         """Stop a specific worker"""
         if task_widget in self.active_workers:
             worker = self.active_workers[task_widget]
             worker.stop()
             worker.deleteLater()
-    
+
     def register_worker(self, task_widget, worker):
         """Register a worker for a task"""
         # Stop existing worker if any
@@ -221,14 +259,14 @@ class TaskManager:
             old_worker = self.active_workers[task_widget]
             old_worker.stop()
             old_worker.deleteLater()
-        
+
         self.active_workers[task_widget] = worker
-    
+
     def unregister_worker(self, task_widget):
         """Unregister a worker"""
         if task_widget in self.active_workers:
             del self.active_workers[task_widget]
-    
+
     def stop_all_workers(self):
         """Stop all active workers"""
         print(f"[TaskManager] Stopping {len(self.active_workers)} worker thread(s)...")
@@ -239,7 +277,7 @@ class TaskManager:
                     worker.stop()
                 except Exception as e:
                     print(f"[TaskManager] Error stopping worker: {e}")
-            
+
             # Wait for all workers to finish with a timeout
             for i, worker in enumerate(list(self.active_workers.values())):
                 try:
@@ -247,7 +285,7 @@ class TaskManager:
                         print(f"[TaskManager] Worker {i} timeout during wait")
                 except Exception as e:
                     print(f"[TaskManager] Error waiting for worker: {e}")
-            
+
             self.active_workers.clear()
             print("[TaskManager] All workers stopped")
         except Exception as e:

@@ -274,7 +274,7 @@ class SettingsPage(ScrollArea):
                     cfg.set("nano_banana_aspect_ratio", gen_page.ratio_combo.currentText())
                     cfg.set("nano_banana_image_size", gen_page.size_combo.currentText())
                 elif gen_page._is_completion_model(model):
-                    cfg.set("gpt_image_size", gen_page.gpt_size_combo.currentText())
+                    cfg.set("gpt_image_size", gen_page.gpt_ratio_combo.currentText())
                 
                 # Save shared parameters
                 cfg.set("auto_retry_on_failure", gen_page.auto_retry_cb.isChecked())

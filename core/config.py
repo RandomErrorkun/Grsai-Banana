@@ -3,18 +3,26 @@ import os
 
 from core.model_catalog import LEGACY_IMAGE_MODEL_ALIASES
 
-CONFIG_FILE = 'config.json'
+CONFIG_FILE = 'grsai_config.json'
 
 DEFAULT_CONFIG = {
     "api_base_url": "https://grsai.dakka.com.cn",
     "api_key": "",
-    "output_folder": os.path.join(os.getcwd(), "output"),
-    "last_model": "nano-banana-fast",
+    "output_folder": "./output",
+    "last_model": "nano-banana-2-lite",
     # Nano Banana parameters
     "nano_banana_aspect_ratio": "auto",
     "nano_banana_image_size": "1K",
     # GPT Image parameters
     "gpt_image_size": "auto",
+    "gpt_image_quality": "auto",
+    "gpt_image_tier": "1K",
+    "gpt_transparent_background": False,
+    # Video generation parameters
+    "video_aspect_ratio": "landscape",
+    "video_resolution": "480p",
+    "video_duration": 5,
+    "video_parallel_tasks": 1,
     # Shared parameters
     "auto_retry_on_failure": False,
     "vip_moderation_auto_retry": False,
@@ -28,14 +36,14 @@ DEFAULT_CONFIG = {
     "text_font_family": "Arial",
     "text_auto_wrap": True,
     "comic_story_model": "gemini-3.1-pro",
-    "comic_image_model": "nano-banana-fast",
+    "comic_image_model": "nano-banana-2-lite",
     "comic_page_count": 6,
     "comic_aspect_ratio": "3:4",
     "comic_image_size": "1K",
     "comic_last_project": "",
     # History page settings
     "history_items_per_page": 5,
-    "last_tab": "banana_1"
+    "last_tab": "banana_pro"
 }
 
 class Config:
@@ -71,7 +79,6 @@ class Config:
             migrated["api_base_url"] = DEFAULT_CONFIG["api_base_url"]
 
         legacy_model_map = {
-            "gemini-2.5-flash-image": "nano-banana-fast",
             **LEGACY_IMAGE_MODEL_ALIASES,
         }
         last_model = migrated.get("last_model")
@@ -88,13 +95,27 @@ class Config:
 
         # Migrate old tab names to stable tab keys used by i18n
         tab_key_map = {
-            "Banana 1": "banana_1",
+            "Banana 1": "banana_pro",
             "Banana Pro": "banana_pro",
             "GPT Image": "gpt_image",
         }
         old_last_tab = migrated.get("last_tab")
         if old_last_tab in tab_key_map:
             migrated["last_tab"] = tab_key_map[old_last_tab]
+
+        # The standalone Banana 1 tab has been removed; fold it into Banana Pro.
+        if migrated.get("last_tab") == "banana_1":
+            migrated["last_tab"] = "banana_pro"
+
+        # Carry over the last selected model of the removed Banana 1 tab into Banana Pro
+        # only when the Banana Pro tab has no remembered model yet.
+        legacy_banana_1_model_key = "last_model_tab_banana_1"
+        banana_pro_model_key = "last_model_tab_banana_pro"
+        if legacy_banana_1_model_key in migrated and banana_pro_model_key not in migrated:
+            legacy_value = migrated[legacy_banana_1_model_key]
+            if legacy_value in legacy_model_map:
+                legacy_value = legacy_model_map[legacy_value]
+            migrated[banana_pro_model_key] = legacy_value
 
         for old_name, new_key in tab_key_map.items():
             old_model_key = f"last_model_{old_name}"

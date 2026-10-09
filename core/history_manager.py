@@ -4,8 +4,9 @@ import sqlite3
 import threading
 from datetime import datetime
 
-HISTORY_DB_FILE = "history.db"
+HISTORY_DB_FILE = "grsai_history.db"
 LEGACY_HISTORY_FILE = "history.json"
+OLD_HISTORY_FILE = "grsai_history.json"
 
 
 class HistoryManager:
@@ -30,6 +31,9 @@ class HistoryManager:
                     aspect_ratio TEXT NOT NULL,
                     image_size TEXT NOT NULL,
                     ref_images TEXT,
+                    duration INTEGER,
+                    seed INTEGER,
+                    ref_audios TEXT,
                     status TEXT NOT NULL,
                     created_at TEXT NOT NULL,
                     result_path TEXT,
@@ -40,6 +44,15 @@ class HistoryManager:
                 )
                 """
             )
+            # 为旧版本数据库补充视频任务相关字段
+            existing_columns = {row["name"] for row in conn.execute("PRAGMA table_info(history_tasks)")}
+            for column, decl in (
+                ("duration", "INTEGER"),
+                ("seed", "INTEGER"),
+                ("ref_audios", "TEXT"),
+            ):
+                if column not in existing_columns:
+                    conn.execute(f"ALTER TABLE history_tasks ADD COLUMN {column} {decl}")
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_history_created_at ON history_tasks(created_at DESC)"
             )
@@ -64,6 +77,7 @@ class HistoryManager:
     def _row_to_task(self, row):
         task = dict(row)
         task["ref_images"] = self._deserialize_ref_images(task.get("ref_images"))
+        task["ref_audios"] = self._deserialize_ref_images(task.get("ref_audios"))
         return task
 
     def _insert_task(self, conn, task):
@@ -71,9 +85,10 @@ class HistoryManager:
             """
             INSERT OR REPLACE INTO history_tasks (
                 id, prompt, model, aspect_ratio, image_size, ref_images,
+                duration, seed, ref_audios,
                 status, created_at, result_path, preview_url,
                 failure_reason, error_message, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 task["id"],
@@ -82,6 +97,9 @@ class HistoryManager:
                 task["aspect_ratio"],
                 task["image_size"],
                 self._serialize_ref_images(task.get("ref_images")),
+                task.get("duration"),
+                task.get("seed"),
+                self._serialize_ref_images(task.get("ref_audios")),
                 task["status"],
                 task["created_at"],
                 task.get("result_path"),
@@ -93,10 +111,22 @@ class HistoryManager:
         )
 
     def _migrate_legacy_json(self):
-        if not os.path.exists(LEGACY_HISTORY_FILE):
+        # Try to migrate from grsai_history.json first
+        if not os.path.exists(LEGACY_HISTORY_FILE) and not os.path.exists(OLD_HISTORY_FILE):
             return
+        
+        # Determine which file to migrate from
+        source_file = None
+        if os.path.exists(OLD_HISTORY_FILE):
+            source_file = OLD_HISTORY_FILE
+        elif os.path.exists(LEGACY_HISTORY_FILE):
+            source_file = LEGACY_HISTORY_FILE
+        
+        if not source_file:
+            return
+            
         try:
-            with open(LEGACY_HISTORY_FILE, "r", encoding="utf-8") as f:
+            with open(source_file, "r", encoding="utf-8") as f:
                 legacy_tasks = json.load(f)
         except Exception:
             legacy_tasks = []
@@ -128,14 +158,15 @@ class HistoryManager:
                 conn.commit()
 
         try:
-            backup_file = f"{LEGACY_HISTORY_FILE}.bak"
+            backup_file = f"{source_file}.bak"
             if os.path.exists(backup_file):
                 os.remove(backup_file)
-            os.replace(LEGACY_HISTORY_FILE, backup_file)
+            os.replace(source_file, backup_file)
         except Exception:
             pass
 
-    def add_task(self, task_id, prompt, model, aspect_ratio, image_size, ref_images=None):
+    def add_task(self, task_id, prompt, model, aspect_ratio, image_size, ref_images=None,
+                 duration=None, seed=None, ref_audios=None):
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         task = {
             "id": task_id,
@@ -144,6 +175,9 @@ class HistoryManager:
             "aspect_ratio": aspect_ratio,
             "image_size": image_size,
             "ref_images": ref_images,
+            "duration": duration,
+            "seed": seed,
+            "ref_audios": ref_audios,
             "status": "running",
             "created_at": now,
             "result_path": None,
@@ -210,6 +244,15 @@ class HistoryManager:
         with self._lock:
             with self._connect() as conn:
                 cursor = conn.execute("DELETE FROM history_tasks WHERE status = ?", ("failed",))
+                deleted_count = cursor.rowcount if cursor.rowcount is not None else 0
+                conn.commit()
+                conn.execute("VACUUM")
+        return max(int(deleted_count), 0)
+
+    def clear_violation_tasks(self):
+        with self._lock:
+            with self._connect() as conn:
+                cursor = conn.execute("DELETE FROM history_tasks WHERE status = ?", ("violation",))
                 deleted_count = cursor.rowcount if cursor.rowcount is not None else 0
                 conn.commit()
                 conn.execute("VACUUM")

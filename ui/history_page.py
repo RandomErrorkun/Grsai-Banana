@@ -22,8 +22,17 @@ class TaskDetailsDialog(MessageBoxBase):
         self.content.setStyleSheet("background-color: transparent; border: none; padding: 10px;")
         
         # Format details with better styling
-        status_color = "green" if task_data['status'] == "succeeded" else "red" if task_data['status'] == "failed" else "orange"
-        
+        status = task_data.get('status', '')
+        status_color = "green" if status == "succeeded" else "red" if status in ("failed", "violation") else "orange"
+
+        extra_config_rows = ""
+        duration = task_data.get("duration")
+        if duration not in (None, ""):
+            extra_config_rows += f"<p><span class=\"label\">Duration:</span> <span class=\"value\">{duration}s</span></p>"
+        seed = task_data.get("seed")
+        if seed not in (None, ""):
+            extra_config_rows += f"<p><span class=\"label\">Seed:</span> <span class=\"value\">{seed}</span></p>"
+
         html = f"""
         <style>
             body {{ font-family: Arial, sans-serif; }}
@@ -36,24 +45,25 @@ class TaskDetailsDialog(MessageBoxBase):
             .success {{ color: green; }}
             hr {{ border: none; border-top: 1px solid #ddd; margin: 10px 0; }}
         </style>
-        
+
         <div class="section">
             <div class="section-title">📝 Prompt</div>
             <div class="prompt">{task_data['prompt']}</div>
         </div>
-        
+
         <hr>
-        
+
         <div class="section">
             <div class="section-title">⚙️ Configuration</div>
             <p><span class="label">Model:</span> <span class="value">{task_data['model']}</span></p>
             <p><span class="label">Size:</span> <span class="value">{task_data['image_size']}</span></p>
             <p><span class="label">Aspect Ratio:</span> <span class="value">{task_data['aspect_ratio']}</span></p>
+            {extra_config_rows}
         </div>
-        
+
         <div class="section">
             <div class="section-title">📊 Status</div>
-            <p><span class="label">Status:</span> <span class="value" style="color: {status_color}; font-weight: bold;">{task_data['status'].capitalize()}</span></p>
+            <p><span class="label">Status:</span> <span class="value" style="color: {status_color}; font-weight: bold;">{status.capitalize()}</span></p>
             <p><span class="label">Created At:</span> <span class="value">{task_data['created_at']}</span></p>
             <p><span class="label">Task ID:</span> <span class="value" style="font-family: monospace; font-size: 10pt;">{task_data['id']}</span></p>
         </div>
@@ -101,44 +111,51 @@ class ClickableLabel(QLabel):
 class HistoryItem(CardWidget):
     regenerateRequested = Signal(dict)
     THUMBNAIL_READ_SIZE = QSize(176, 176)
+    VIDEO_EXTENSIONS = (".mp4", ".webm", ".mov", ".avi", ".mkv")
 
     def __init__(self, task_data, parent=None):
         super().__init__(parent)
         self.task_data = task_data
         self._thumbnail_loaded = False
         self._thumb_path = None
+        self._is_video = bool(task_data["result_path"]) and str(task_data["result_path"]).lower().endswith(self.VIDEO_EXTENSIONS)
         self.setFixedHeight(120)
-        
+
         layout = QHBoxLayout(self)
         layout.setContentsMargins(16, 16, 16, 16)
-        
+
         # Thumbnail - Use standard QLabel to ensure fixed size works reliably
         self.thumb = QLabel()
         self.thumb.setFixedSize(88, 88)
         self.thumb.setStyleSheet("background-color: #eee; border-radius: 8px; border: 1px solid #ddd;")
         self.thumb.setScaledContents(True)
-        
+
         if task_data["status"] == "succeeded" and task_data["result_path"] and os.path.exists(task_data["result_path"]):
             self._thumb_path = task_data["result_path"]
             self.thumb.setCursor(Qt.PointingHandCursor)
             self.thumb.mousePressEvent = self.on_thumb_click
-            self.thumb.setText("...")
-            self.thumb.setAlignment(Qt.AlignCenter)
+            if self._is_video:
+                self.thumb.setText("🎬")
+                self.thumb.setAlignment(Qt.AlignCenter)
+                self.thumb.setToolTip(tr("history.play_video"))
+            else:
+                self.thumb.setText("...")
+                self.thumb.setAlignment(Qt.AlignCenter)
         else:
             self.thumb.setText(tr("history.no_image"))
             self.thumb.setAlignment(Qt.AlignCenter)
-            
+
         layout.addWidget(self.thumb)
-        
+
         # Info
         info_layout = QVBoxLayout()
         info_layout.setSpacing(4)
-        
+
         # Prompt Label - Clickable and Elided
         self.prompt_label = ClickableLabel()
         self.prompt_label.setCursor(Qt.PointingHandCursor)
         self.prompt_label.clicked.connect(self.show_details)
-        
+
         # Elide text
         font = StrongBodyLabel().font()
         self.prompt_label.setFont(font)
@@ -147,27 +164,32 @@ class HistoryItem(CardWidget):
         self.prompt_label.setText(elided_text)
         # Tooltip for quick view
         self.prompt_label.setToolTip(tr("history.prompt_tooltip"))
-        
+
         info_layout.addWidget(self.prompt_label)
-        info_layout.addWidget(BodyLabel(f"Model: {task_data['model']} | Size: {task_data['image_size']}"))
+
+        model_line = f"Model: {task_data['model']} | Size: {task_data['image_size']}"
+        duration = task_data.get("duration")
+        if isinstance(duration, (int, float)) and duration > 0:
+            model_line += f" | {int(duration)}s"
+        info_layout.addWidget(BodyLabel(model_line))
         info_layout.addWidget(CaptionLabel(task_data["created_at"]))
-        
+
         layout.addLayout(info_layout)
         layout.addStretch()
-        
+
         # Status
         status_layout = QVBoxLayout()
         status_layout.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        
+
         status_text = task_data["status"].capitalize()
         status_label = StrongBodyLabel(status_text)
         if task_data["status"] == "succeeded":
             status_label.setStyleSheet("color: green;")
-        elif task_data["status"] == "failed":
+        elif task_data["status"] in ("failed", "violation"):
             status_label.setStyleSheet("color: red;")
         else:
             status_label.setStyleSheet("color: orange;")
-            
+
         status_layout.addWidget(status_label)
         
         # Buttons Layout
@@ -206,7 +228,7 @@ class HistoryItem(CardWidget):
             QDesktopServices.openUrl(QUrl.fromLocalFile(folder))
 
     def has_thumbnail(self):
-        return bool(self._thumb_path)
+        return bool(self._thumb_path) and not self._is_video
 
     def load_thumbnail(self):
         if self._thumbnail_loaded or not self._thumb_path:
@@ -259,6 +281,9 @@ class HistoryPage(QWidget):
         self.clear_failed_btn = TransparentPushButton(FluentIcon.DELETE, tr("history.clear_failed"))
         self.clear_failed_btn.clicked.connect(self.clear_failed_tasks)
         top_layout.addWidget(self.clear_failed_btn)
+        self.clear_violation_btn = TransparentPushButton(FluentIcon.DELETE, tr("history.clear_violation"))
+        self.clear_violation_btn.clicked.connect(self.clear_violation_tasks)
+        top_layout.addWidget(self.clear_violation_btn)
         self.clear_all_btn = TransparentPushButton(FluentIcon.DELETE, tr("history.clear_all"))
         self.clear_all_btn.clicked.connect(self.clear_all_tasks)
         top_layout.addWidget(self.clear_all_btn)
@@ -331,6 +356,14 @@ class HistoryPage(QWidget):
         if not self._confirm_cleanup("history.clear_failed", "history.clear_failed_confirm"):
             return
         deleted_count = history_mgr.clear_failed_tasks()
+        self.current_page = 1
+        self.load_history()
+        self._show_cleanup_result(deleted_count)
+
+    def clear_violation_tasks(self):
+        if not self._confirm_cleanup("history.clear_violation", "history.clear_violation_confirm"):
+            return
+        deleted_count = history_mgr.clear_violation_tasks()
         self.current_page = 1
         self.load_history()
         self._show_cleanup_result(deleted_count)

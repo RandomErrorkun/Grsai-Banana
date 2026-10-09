@@ -6,25 +6,28 @@ from ui.comic_page import ComicPage
 from ui.generator_page import GeneratorPage
 from ui.history_page import HistoryPage
 from ui.settings_page import SettingsPage
+from ui.video_page import VideoPage
 from core.config import cfg
 from core.i18n import tr
+from core.model_catalog import VIDEO_MODELS
 from core.task_manager import task_manager
 
 class MainWindow(FluentWindow):
     def __init__(self):
         super().__init__()
-        
+
         # Apply saved theme
         saved_theme = cfg.get("theme", "auto")
         if saved_theme == "dark":
             setTheme(Theme.DARK)
         elif saved_theme == "light":
             setTheme(Theme.LIGHT)
-            
+
         self.initWindow()
 
         # Create sub interfaces
         self.generator_interface = GeneratorPage()
+        self.video_interface = VideoPage()
         self.comic_interface = ComicPage()
         self.history_interface = HistoryPage()
         self.settings_interface = SettingsPage()
@@ -34,7 +37,7 @@ class MainWindow(FluentWindow):
 
     def initWindow(self):
         self.resize(1100, 750)
-        self.setMinimumWidth(760)
+        self.setMinimumSize(760, 500)
         self.setWindowTitle(tr("main.title"))
         
         # Center on screen
@@ -44,6 +47,7 @@ class MainWindow(FluentWindow):
 
     def initNavigation(self):
         self.addSubInterface(self.generator_interface, FluentIcon.BRUSH, tr("nav.generator"))
+        self.addSubInterface(self.video_interface, FluentIcon.VIDEO, tr("nav.video"))
         self.addSubInterface(self.comic_interface, FluentIcon.PHOTO, tr("nav.comic"))
         self.addSubInterface(self.history_interface, FluentIcon.HISTORY, tr("nav.history"))
         
@@ -71,19 +75,27 @@ class MainWindow(FluentWindow):
         print("[MainWindow] Application closing, stopping all workers...")
         task_manager.stop_all_workers()
         self.generator_interface.stop_all_workers()
+        self.video_interface.stop_all_workers()
         self.comic_interface.stop_all_workers()
         super().closeEvent(event)
 
     def regenerate_task(self, task_data):
+        model_name = task_data.get('model', '')
+
+        # 视频任务路由到视频页面恢复参数
+        if model_name in VIDEO_MODELS:
+            self.switchTo(self.video_interface)
+            self.video_interface.apply_history_task(task_data)
+            return
+
         # Switch to generator page
         self.switchTo(self.generator_interface)
 
-        model_name = task_data.get('model', '')
         model_name = self.generator_interface.LEGACY_MODEL_ALIASES.get(model_name, model_name)
         target_tab = self.generator_interface.get_tab_for_model(model_name)
         if target_tab:
             self.generator_interface.model_tabs.setCurrentItem(target_tab)
-        
+
         # Populate fields
         self.generator_interface.prompt_widget.set_prompt(task_data['prompt'])
         self.generator_interface.model_combo.setCurrentText(model_name)
@@ -91,7 +103,7 @@ class MainWindow(FluentWindow):
             self.generator_interface.ratio_combo.setCurrentText(task_data['aspect_ratio'])
             self.generator_interface.size_combo.setCurrentText(task_data['image_size'])
         elif self.generator_interface._is_completion_model(model_name):
-            self.generator_interface.gpt_size_combo.setCurrentText(task_data['image_size'])
+            self.generator_interface.gpt_ratio_combo.setCurrentText(task_data['image_size'])
         
         # Handle reference image if it exists
         # Clear existing images first

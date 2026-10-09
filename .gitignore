@@ -3,11 +3,16 @@ input/*
 output/*
 __pycache__/
 *.pyc
+api_docs/
+.zcodeignore
 
 config.json
 history.json
 history.db
 history.json.bak
+grsai_history.db
+grsai_history.csv
+grsai_config.json
 
 Grsai-Banana.7z
 grsai提示教程.md
@@ -15,4 +20,32 @@ grsai提示教程.md
 # pixi environments
 .pixi/*
 !.pixi/config.toml
+
+# Nuitka build output
+*.build/
+*.dist/
+*.onefile-build/
+
+# SQLite sidecar files
+*.db-wal
+*.db-shm
+*.db-journal
+
+# virtualenvs (non-pixi fallback)
+.venv/
+venv/
+
+# env files
+.env
+.env.*
+
+# OS junk
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# IDE / logs
+.idea/
+.vscode/
+*.log
 
