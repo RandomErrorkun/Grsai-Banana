@@ -47,6 +47,7 @@ GPT_IMAGE_MODELS = [
 
 VIDEO_MODELS = [
     "minimax-h3",
+    "agnes-video-2.5",
 ]
 
 LEGACY_IMAGE_MODEL_ALIASES = {
@@ -187,22 +188,104 @@ VIP_MODELS = [
     "gpt-image-2-vip",
 ]
 
-# --- minimax-h3 视频生成（依据 api_docs/minimax-h3接口.md，2026-09-15 版本）---
-VIDEO_ASPECT_OPTIONS = ["portrait", "landscape", "square"]
-VIDEO_RESOLUTIONS = ["480p", "768p", "1080p"]
-VIDEO_MAX_IMAGES = 9
-VIDEO_MAX_AUDIOS = 3
-VIDEO_MAX_DURATION = 15
+# --- 视频生成模型参数 ---
+# minimax-h3（依据 api_docs/minimax-h3接口.md，2026-09-15 版本）
+MINIMAX_VIDEO_ASPECT_OPTIONS = ["portrait", "landscape", "square"]
+MINIMAX_VIDEO_RESOLUTIONS = ["480p", "768p", "1080p"]
+MINIMAX_VIDEO_MAX_IMAGES = 9
+MINIMAX_VIDEO_MAX_AUDIOS = 3
+MINIMAX_VIDEO_MIN_DURATION = 1
+MINIMAX_VIDEO_MAX_DURATION = 15
 # 各分辨率支持的最大时长（1080p 最多 10 秒；同上文档，2026-09-15 版本）
-VIDEO_DURATION_LIMITS = {
+MINIMAX_VIDEO_DURATION_LIMITS = {
     "480p": 15,
     "768p": 15,
     "1080p": 10,
 }
 
+# agnes-video-2.5（依据 api_docs/agnes-video接口.md，2026-10-17 版本）
+# 支持对白/声音设计提示（口型同步），时长固定 4~12 秒，与分辨率无关
+AGNES_VIDEO_ASPECT_OPTIONS = ["16:9", "9:16", "21:9", "4:3", "1:1", "3:4"]
+AGNES_VIDEO_RESOLUTIONS = ["720p", "1080p", "2k"]
+AGNES_VIDEO_MAX_IMAGES = 5
+AGNES_VIDEO_MAX_AUDIOS = 3
+AGNES_VIDEO_MIN_DURATION = 4
+AGNES_VIDEO_MAX_DURATION = 12
 
-def video_duration_limit(resolution):
-    return VIDEO_DURATION_LIMITS.get(resolution, VIDEO_MAX_DURATION)
+# 旧常量名保留给既有引用（默认指向 minimax-h3）
+VIDEO_ASPECT_OPTIONS = MINIMAX_VIDEO_ASPECT_OPTIONS
+VIDEO_RESOLUTIONS = MINIMAX_VIDEO_RESOLUTIONS
+VIDEO_MAX_IMAGES = MINIMAX_VIDEO_MAX_IMAGES
+VIDEO_MAX_AUDIOS = MINIMAX_VIDEO_MAX_AUDIOS
+VIDEO_MAX_DURATION = MINIMAX_VIDEO_MAX_DURATION
+VIDEO_DURATION_LIMITS = MINIMAX_VIDEO_DURATION_LIMITS
+
+# 各视频模型的可选参数集（UI 与请求构造共用同一份配置）
+VIDEO_MODEL_SPECS = {
+    "minimax-h3": {
+        "aspects": MINIMAX_VIDEO_ASPECT_OPTIONS,
+        "resolutions": MINIMAX_VIDEO_RESOLUTIONS,
+        "max_images": MINIMAX_VIDEO_MAX_IMAGES,
+        "max_audios": MINIMAX_VIDEO_MAX_AUDIOS,
+        "min_duration": MINIMAX_VIDEO_MIN_DURATION,
+        "max_duration": MINIMAX_VIDEO_MAX_DURATION,
+        "duration_limits": MINIMAX_VIDEO_DURATION_LIMITS,
+        "default_aspect": "landscape",
+        "default_resolution": "480p",
+    },
+    "agnes-video-2.5": {
+        "aspects": AGNES_VIDEO_ASPECT_OPTIONS,
+        "resolutions": AGNES_VIDEO_RESOLUTIONS,
+        "max_images": AGNES_VIDEO_MAX_IMAGES,
+        "max_audios": AGNES_VIDEO_MAX_AUDIOS,
+        "min_duration": AGNES_VIDEO_MIN_DURATION,
+        "max_duration": AGNES_VIDEO_MAX_DURATION,
+        "duration_limits": {r: AGNES_VIDEO_MAX_DURATION for r in AGNES_VIDEO_RESOLUTIONS},
+        "default_aspect": "16:9",
+        "default_resolution": "720p",
+    },
+}
+
+
+def _video_spec(model):
+    return VIDEO_MODEL_SPECS.get(model) or VIDEO_MODEL_SPECS["minimax-h3"]
+
+
+def video_aspect_options(model):
+    return list(_video_spec(model)["aspects"])
+
+
+def video_resolutions(model):
+    return list(_video_spec(model)["resolutions"])
+
+
+def video_max_images(model):
+    return _video_spec(model)["max_images"]
+
+
+def video_max_audios(model):
+    return _video_spec(model)["max_audios"]
+
+
+def video_duration_bounds(model):
+    """返回 (min, max) 全局时长边界（未按分辨率收窄）。"""
+    spec = _video_spec(model)
+    return spec["min_duration"], spec["max_duration"]
+
+
+def video_default_aspect(model):
+    return _video_spec(model)["default_aspect"]
+
+
+def video_default_resolution(model):
+    return _video_spec(model)["default_resolution"]
+
+
+def video_duration_limit(model, resolution):
+    """指定模型 + 分辨率下的最大时长。"""
+    limits = _video_spec(model)["duration_limits"]
+    max_duration = _video_spec(model)["max_duration"]
+    return limits.get(resolution, max_duration)
 
 
 NANO_MODELS = set(BANANA_PRO_MODELS)

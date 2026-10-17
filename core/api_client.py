@@ -11,6 +11,11 @@ from core.model_catalog import (
     GPT_IMAGE_QUALITY_OPTIONS,
     GPT_TRANSPARENT_MODELS,
     LEGACY_IMAGE_MODEL_ALIASES,
+    video_aspect_options,
+    video_resolutions,
+    video_default_aspect,
+    video_default_resolution,
+    video_duration_bounds,
     video_duration_limit,
     VIDEO_MAX_DURATION,
 )
@@ -184,12 +189,15 @@ class ApiClient:
             return payload
 
         if model in VIDEO_MODEL_SET:
-            resolution = image_size if image_size in ("480p", "768p", "1080p") else "480p"
+            resolutions = video_resolutions(model)
+            resolution = image_size if image_size in resolutions else video_default_resolution(model)
+            aspects = video_aspect_options(model)
+            min_duration, max_duration = video_duration_bounds(model)
             try:
                 duration_value = int(duration)
             except (TypeError, ValueError):
                 duration_value = 5
-            duration_value = max(1, min(duration_value, video_duration_limit(resolution), VIDEO_MAX_DURATION))
+            duration_value = max(min_duration, min(duration_value, video_duration_limit(model, resolution), max_duration, VIDEO_MAX_DURATION))
             try:
                 seed_value = int(seed)
             except (TypeError, ValueError):
@@ -197,7 +205,7 @@ class ApiClient:
             payload = {
                 "model": model,
                 "prompt": prompt,
-                "aspectRatio": aspect_ratio if aspect_ratio in ("portrait", "landscape", "square") else "landscape",
+                "aspectRatio": aspect_ratio if aspect_ratio in aspects else video_default_aspect(model),
                 "images": ref_image_urls or [],
                 "audios": ref_audios or [],
                 "seed": seed_value,

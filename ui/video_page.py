@@ -11,12 +11,14 @@ from core.config import cfg
 from core.i18n import tr
 from core.model_catalog import (
     VIDEO_MODELS,
-    VIDEO_ASPECT_OPTIONS,
-    VIDEO_RESOLUTIONS,
-    VIDEO_MAX_IMAGES,
-    VIDEO_MAX_AUDIOS,
-    VIDEO_MAX_DURATION,
+    video_aspect_options,
+    video_resolutions,
+    video_max_images,
+    video_max_audios,
+    video_duration_bounds,
     video_duration_limit,
+    video_default_aspect,
+    video_default_resolution,
 )
 from core.task_manager import task_manager
 from ui.components.prompt_widget import PromptWidget
@@ -30,9 +32,20 @@ ASPECT_LABEL_KEYS = {
     "square": "video.aspect.square",
 }
 
+HINT_KEYS = {
+    "minimax-h3": "video.hint_minimax",
+    "agnes-video-2.5": "video.hint_agnes",
+}
+
+# 各模型的参数记忆键（minimax 沿用旧键，老用户设置不丢）
+VIDEO_MODEL_CONFIG_KEYS = {
+    "minimax-h3": ("video_aspect_ratio", "video_resolution", "video_duration"),
+    "agnes-video-2.5": ("agnes_video_aspect_ratio", "agnes_video_resolution", "agnes_video_duration"),
+}
+
 
 class VideoPage(QWidget):
-    """minimax-h3 视频生成页面，布局与功能复用图像生成页面。"""
+    """视频生成页面（minimax-h3 / agnes-video-2.5），布局与功能复用图像生成页面。"""
 
     def __init__(self):
         super().__init__()
@@ -77,29 +90,18 @@ class VideoPage(QWidget):
         self.model_combo.addItems(VIDEO_MODELS)
         settings_inner.addWidget(self.model_combo)
 
-        # Aspect Ratio / Resolution（双列，压缩纵向高度）
+        # Aspect Ratio / Resolution（双列，压缩纵向高度；选项随模型联动填充）
         param_row_1 = QHBoxLayout()
         param_row_1.setSpacing(12)
 
         self.aspect_label = CaptionLabel(tr("video.aspect_ratio"))
         param_row_1.addWidget(self.aspect_label)
         self.aspect_combo = ComboBox()
-        aspect_items = [tr(ASPECT_LABEL_KEYS.get(value, value)) for value in VIDEO_ASPECT_OPTIONS]
-        self.aspect_combo.addItems(aspect_items)
-        saved_aspect = cfg.get("video_aspect_ratio", "landscape")
-        if saved_aspect not in VIDEO_ASPECT_OPTIONS:
-            saved_aspect = "landscape"
-        self.aspect_combo.setCurrentText(tr(ASPECT_LABEL_KEYS.get(saved_aspect, saved_aspect)))
         param_row_1.addWidget(self.aspect_combo, 1)
 
         self.resolution_label = CaptionLabel(tr("video.resolution"))
         param_row_1.addWidget(self.resolution_label)
         self.resolution_combo = ComboBox()
-        self.resolution_combo.addItems(VIDEO_RESOLUTIONS)
-        saved_resolution = cfg.get("video_resolution", "480p")
-        if saved_resolution not in VIDEO_RESOLUTIONS:
-            saved_resolution = "480p"
-        self.resolution_combo.setCurrentText(saved_resolution)
         self.resolution_combo.currentTextChanged.connect(self.on_resolution_changed)
         param_row_1.addWidget(self.resolution_combo, 1)
         settings_inner.addLayout(param_row_1)
@@ -111,13 +113,7 @@ class VideoPage(QWidget):
         self.duration_label = CaptionLabel(tr("video.duration"))
         param_row_2.addWidget(self.duration_label)
         self.duration_spin = SpinBox()
-        self.duration_spin.setRange(1, VIDEO_MAX_DURATION)
-        saved_duration = cfg.get("video_duration", 5)
-        try:
-            saved_duration = int(saved_duration)
-        except (TypeError, ValueError):
-            saved_duration = 5
-        self.duration_spin.setValue(max(1, min(saved_duration, VIDEO_MAX_DURATION)))
+        self.duration_spin.setRange(1, 15)
         param_row_2.addWidget(self.duration_spin, 1)
 
         self.seed_label = CaptionLabel(tr("video.seed"))
@@ -156,10 +152,10 @@ class VideoPage(QWidget):
 
         settings_inner.addLayout(retry_parallel_layout)
 
-        # Hint
-        self.hint_label = CaptionLabel(tr("video.hint"))
+        # Hint（文案随模型联动更新）
+        self.hint_label = CaptionLabel("")
         self.hint_label.setWordWrap(True)
-        self.hint_label.setMaximumHeight(48)
+        self.hint_label.setMaximumHeight(64)
         settings_inner.addWidget(self.hint_label)
 
         settings_layout_v.addWidget(self.settings_card)
@@ -197,7 +193,7 @@ class VideoPage(QWidget):
 
         ref_container_layout.addLayout(img_header_layout)
 
-        self.drop_area = ImageDropArea(max_images=VIDEO_MAX_IMAGES)
+        self.drop_area = ImageDropArea(max_images=max(video_max_images(m) for m in VIDEO_MODELS))
         self.drop_area.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         ref_container_layout.addWidget(self.drop_area, 2)
 
@@ -220,7 +216,7 @@ class VideoPage(QWidget):
 
         ref_container_layout.addLayout(audio_header_layout)
 
-        self.audio_area = AudioDropArea(max_files=VIDEO_MAX_AUDIOS)
+        self.audio_area = AudioDropArea(max_files=max(video_max_audios(m) for m in VIDEO_MODELS))
         ref_container_layout.addWidget(self.audio_area)
 
         middle_layout.addWidget(ref_container, 1)
@@ -258,6 +254,14 @@ class VideoPage(QWidget):
 
         main_layout.addWidget(right_panel, 1)
 
+        # 按上次使用的模型初始化联动选项（组合框文本未变化时不会触发信号，这里显式应用一次）
+        initial_model = cfg.get("video_last_model", VIDEO_MODELS[0])
+        if initial_model not in VIDEO_MODELS:
+            initial_model = VIDEO_MODELS[0]
+        self.model_combo.setCurrentText(initial_model)
+        self.model_combo.currentTextChanged.connect(self.on_model_changed)
+        self._apply_model_options(initial_model)
+
     def keyPressEvent(self, event):
         if event.modifiers() == Qt.ControlModifier and event.key() == Qt.Key_V:
             clipboard = QApplication.clipboard()
@@ -280,20 +284,70 @@ class VideoPage(QWidget):
             bg_color = "rgb(255, 255, 255)"
         card_widget.setStyleSheet(f"CardWidget {{ background-color: {bg_color}; }}")
 
+    def _current_model(self):
+        return self.model_combo.currentText() or VIDEO_MODELS[0]
+
+    def _config_keys(self, model):
+        return VIDEO_MODEL_CONFIG_KEYS.get(model) or VIDEO_MODEL_CONFIG_KEYS[VIDEO_MODELS[0]]
+
+    def _apply_model_options(self, model):
+        """按模型重刷比例/分辨率选项、时长范围、参考图上限与提示文案，并恢复该模型的上次参数。"""
+        aspects = video_aspect_options(model)
+        resolutions = video_resolutions(model)
+        min_duration, max_duration = video_duration_bounds(model)
+        aspect_key, resolution_key, duration_key = self._config_keys(model)
+
+        self.aspect_combo.blockSignals(True)
+        self.aspect_combo.clear()
+        self.aspect_combo.addItems([tr(ASPECT_LABEL_KEYS.get(value, value)) for value in aspects])
+        saved_aspect = cfg.get(aspect_key, video_default_aspect(model))
+        if saved_aspect not in aspects:
+            saved_aspect = video_default_aspect(model)
+        self.aspect_combo.setCurrentText(tr(ASPECT_LABEL_KEYS.get(saved_aspect, saved_aspect)))
+        self.aspect_combo.blockSignals(False)
+
+        self.resolution_combo.blockSignals(True)
+        self.resolution_combo.clear()
+        self.resolution_combo.addItems(resolutions)
+        saved_resolution = cfg.get(resolution_key, video_default_resolution(model))
+        if saved_resolution not in resolutions:
+            saved_resolution = video_default_resolution(model)
+        self.resolution_combo.setCurrentText(saved_resolution)
+        self.resolution_combo.blockSignals(False)
+
+        self.duration_spin.blockSignals(True)
+        self.duration_spin.setRange(min_duration, max_duration)
+        try:
+            saved_duration = int(cfg.get(duration_key, 5))
+        except (TypeError, ValueError):
+            saved_duration = 5
+        saved_duration = max(min_duration, min(saved_duration, self._duration_limit(), max_duration))
+        self.duration_spin.setValue(saved_duration)
+        self.duration_spin.blockSignals(False)
+
+        self.drop_area.MAX_IMAGES = video_max_images(model)
+        self.drop_area.update_texts()
+        self.hint_label.setText(tr(HINT_KEYS.get(model, HINT_KEYS[VIDEO_MODELS[0]])))
+
+    def on_model_changed(self, model):
+        self._apply_model_options(model)
+
     def _aspect_value(self):
+        model = self._current_model()
         current_text = self.aspect_combo.currentText()
-        for value in VIDEO_ASPECT_OPTIONS:
+        for value in video_aspect_options(model):
             if tr(ASPECT_LABEL_KEYS.get(value, value)) == current_text:
                 return value
-        return "landscape"
+        return video_default_aspect(model)
 
     def _set_aspect_by_value(self, value):
-        if value not in VIDEO_ASPECT_OPTIONS:
-            value = "landscape"
+        model = self._current_model()
+        if value not in video_aspect_options(model):
+            value = video_default_aspect(model)
         self.aspect_combo.setCurrentText(tr(ASPECT_LABEL_KEYS.get(value, value)))
 
     def _duration_limit(self):
-        return video_duration_limit(self.resolution_combo.currentText())
+        return video_duration_limit(self._current_model(), self.resolution_combo.currentText())
 
     def on_resolution_changed(self, _text):
         limit = self._duration_limit()
@@ -324,21 +378,24 @@ class VideoPage(QWidget):
                 InfoBar.warning(title=tr("common.warning"), content=tr("video.seed_invalid"), parent=self, position=InfoBarPosition.TOP_RIGHT)
                 return
 
-        model = self.model_combo.currentText() or VIDEO_MODELS[0]
+        model = self._current_model()
         aspect = self._aspect_value()
         resolution = self.resolution_combo.currentText()
-        duration = max(1, min(self.duration_spin.value(), self._duration_limit()))
+        min_duration, max_duration = video_duration_bounds(model)
+        duration = max(min_duration, min(self.duration_spin.value(), self._duration_limit()))
 
-        cfg.set("video_aspect_ratio", aspect)
-        cfg.set("video_resolution", resolution)
-        cfg.set("video_duration", duration)
+        aspect_key, resolution_key, duration_key = self._config_keys(model)
+        cfg.set(aspect_key, aspect)
+        cfg.set(resolution_key, resolution)
+        cfg.set(duration_key, duration)
+        cfg.set("video_last_model", model)
 
         parallel_count = self.parallel_slider.value()
         cfg.set("auto_retry_on_failure", self.auto_retry_cb.isChecked())
         cfg.set("video_parallel_tasks", parallel_count)
 
-        ref_urls = [p for p in self.drop_area.image_paths if os.path.isfile(p)]
-        ref_audios = [p for p in self.audio_area.audio_paths if os.path.isfile(p)]
+        ref_urls = [p for p in self.drop_area.image_paths if os.path.isfile(p)][:video_max_images(model)]
+        ref_audios = [p for p in self.audio_area.audio_paths if os.path.isfile(p)][:video_max_audios(model)]
 
         params = {
             "model": model,
@@ -410,25 +467,30 @@ class VideoPage(QWidget):
         self.create_task(task_widget.prompt, task_widget.params.copy())
 
     def apply_history_task(self, task_data):
-        """从历史记录恢复视频任务参数"""
+        """从历史记录恢复视频任务参数（选项集随时切换的模型联动）"""
         self.prompt_widget.set_prompt(task_data.get("prompt", ""))
 
         model = task_data.get("model", VIDEO_MODELS[0])
-        if self.model_combo.findText(model) >= 0:
-            self.model_combo.setCurrentText(model)
+        if self.model_combo.findText(model) < 0:
+            model = VIDEO_MODELS[0]
+        # setCurrentText 与当前值相同时不触发信号，这里统一显式重刷一次联动选项
+        self.model_combo.setCurrentText(model)
+        self._apply_model_options(model)
 
-        self._set_aspect_by_value(task_data.get("aspect_ratio") or "landscape")
+        self._set_aspect_by_value(task_data.get("aspect_ratio") or video_default_aspect(model))
 
-        resolution = task_data.get("image_size") or "480p"
+        resolution = task_data.get("image_size") or video_default_resolution(model)
         if self.resolution_combo.findText(resolution) >= 0:
             self.resolution_combo.setCurrentText(resolution)
 
+        min_duration, max_duration = video_duration_bounds(model)
         duration = task_data.get("duration")
         try:
             duration = int(duration)
         except (TypeError, ValueError):
-            duration = cfg.get("video_duration", 5)
-        self.duration_spin.setValue(max(1, min(duration, VIDEO_MAX_DURATION)))
+            _, _, duration_key = self._config_keys(model)
+            duration = cfg.get(duration_key, 5)
+        self.duration_spin.setValue(max(min_duration, min(duration, max_duration)))
 
         seed = task_data.get("seed")
         self.seed_edit.setText(str(int(seed)) if seed not in (None, "") else "")

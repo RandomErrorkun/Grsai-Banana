@@ -19,10 +19,15 @@ DEFAULT_CONFIG = {
     "gpt_image_tier": "1K",
     "gpt_transparent_background": False,
     # Video generation parameters
+    "video_last_model": "minimax-h3",
     "video_aspect_ratio": "landscape",
     "video_resolution": "480p",
     "video_duration": 5,
     "video_parallel_tasks": 1,
+    # agnes-video-2.5 parameters
+    "agnes_video_aspect_ratio": "16:9",
+    "agnes_video_resolution": "720p",
+    "agnes_video_duration": 5,
     # Shared parameters
     "auto_retry_on_failure": False,
     "vip_moderation_auto_retry": False,

@@ -1,6 +1,6 @@
 # Grsai Banana Image Generator
 
-一个基于 PySide6 和 Fluent-Widgets 构建的 Windows 桌面客户端，专为国产中转网站 [Grsai](https://grsai.com/zh/) 的生成模型设计。支持图像生成（Banana 系列、GPT Image 系列）、视频生成（minimax-h3）、漫画分页生成、历史记录管理和本地配置保存。
+一个基于 PySide6 和 Fluent-Widgets 构建的 Windows 桌面客户端，专为国产中转网站 [Grsai](https://grsai.com/zh/) 的生成模型设计。支持图像生成（Banana 系列、GPT Image 系列）、视频生成（minimax-h3、agnes-video-2.5）、漫画分页生成、历史记录管理和本地配置保存。
 
 ![](https://raw.githubusercontent.com/Moeary/pic_bed/main/img/202512192008692.png)
 
@@ -23,11 +23,16 @@
 
 ### 视频生成
 
-- `minimax-h3` 模型，独立「视频」页面，交互与图像生成页一致
-- 画面比例：portrait（竖屏）/ landscape（横屏）/ square（方屏）
-- 分辨率：480p / 768p / 1080p（1080p 下最长 10 秒）
-- 时长 1–15 秒；支持随机种子，留空自动生成，重试 / 重新生成复用同一种子
-- 参考图最多 9 张，参考音频最多 3 个（mp3 / wav / m4a / aac / flac / ogg）
+- `minimax-h3` 与 `agnes-video-2.5` 模型，独立「视频」页面，交互与图像生成页一致，参数选项随所选模型联动
+- minimax-h3：
+  - 画面比例：portrait（竖屏）/ landscape（横屏）/ square（方屏）
+  - 分辨率：480p / 768p / 1080p（1080p 下最长 10 秒）
+  - 时长 1–15 秒；参考图最多 9 张
+- agnes-video-2.5：
+  - 画面比例：16:9 / 9:16 / 21:9 / 4:3 / 1:1 / 3:4
+  - 分辨率：720p / 1080p / 2k
+  - 时长 4–12 秒，支持在提示词中编写对白与声音设计（人物口型同步）；参考图最多 5 张
+- 通用：支持随机种子，留空自动生成，重试 / 重新生成复用同一种子；参考音频最多 3 个（mp3 / wav / m4a / aac / flac / ogg）
 - 参考音频自动探测时长，支持本地试听（播放 / 暂停 / 停止）
 - 视频任务完成后点击任务卡片即可调用系统播放器播放
 
