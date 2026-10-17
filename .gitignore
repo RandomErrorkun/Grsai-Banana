@@ -5,6 +5,7 @@ __pycache__/
 *.pyc
 api_docs/
 .zcodeignore
+refs/
 
 config.json
 history.json
