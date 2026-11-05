@@ -1,7 +1,7 @@
 import os
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QSizePolicy, QApplication
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QSizePolicy, QApplication, QStackedWidget
 from qfluentwidgets import (CardWidget, PrimaryPushButton, ComboBox, CaptionLabel,
                             InfoBar, InfoBarPosition, CheckBox, Slider, SegmentedWidget,
                             TransparentToolButton, FluentIcon, StrongBodyLabel, BodyLabel,
@@ -19,6 +19,7 @@ from core.model_catalog import (
     video_duration_limit,
     video_default_aspect,
     video_default_resolution,
+    video_supports_frames,
 )
 from core.task_manager import task_manager
 from ui.components.prompt_widget import PromptWidget
@@ -35,22 +36,35 @@ ASPECT_LABEL_KEYS = {
 HINT_KEYS = {
     "minimax-h3": "video.hint_minimax",
     "agnes-video-2.5": "video.hint_agnes",
+    "wan-3.0": "video.hint_wan",
 }
 
 # 各模型的参数记忆键（minimax 沿用旧键，老用户设置不丢）
 VIDEO_MODEL_CONFIG_KEYS = {
     "minimax-h3": ("video_aspect_ratio", "video_resolution", "video_duration"),
     "agnes-video-2.5": ("agnes_video_aspect_ratio", "agnes_video_resolution", "agnes_video_duration"),
+    "wan-3.0": ("wan_video_aspect_ratio", "wan_video_resolution", "wan_video_duration"),
 }
+
+# 素材模式：参考图/音频 与 首尾帧 互斥（依据 wan-video / agnes-video 接口文档）
+REF_MODE_REFS = "refs"
+REF_MODE_FRAMES = "frames"
 
 
 class VideoPage(QWidget):
-    """视频生成页面（minimax-h3 / agnes-video-2.5），布局与功能复用图像生成页面。"""
+    """视频生成页面（minimax-h3 / agnes-video-2.5 / wan-3.0），布局与功能复用图像生成页面。
+
+    支持首尾帧的模型（wan-3.0 / agnes-video-2.5）在参考素材区提供两种互斥模式：
+    参考图+参考音频（images/audios）或 首帧+尾帧（firstFrame/lastFrame），
+    由接口约束决定——两套参数不能同时提交。
+    """
 
     def __init__(self):
         super().__init__()
         self.setObjectName("VideoPage")
         self.task_counter = 0
+        # 当前是否处于首尾帧素材模式（仅对支持 firstFrame/lastFrame 的模型生效）
+        self._ref_mode_frames = False
         self.initUI()
 
     def initUI(self):
@@ -168,7 +182,24 @@ class VideoPage(QWidget):
         middle_layout.setContentsMargins(0, 0, 0, 0)
         middle_layout.setSpacing(15)
 
-        # Reference column (images + audios)
+        # Reference column: 素材模式切换（参考图/音频 ↔ 首尾帧，互斥）+ 两种素材面板
+        ref_column = QWidget()
+        ref_column_layout = QVBoxLayout(ref_column)
+        ref_column_layout.setContentsMargins(0, 0, 0, 0)
+        ref_column_layout.setSpacing(5)
+
+        # 模式切换（仅支持首尾帧的模型可见；wan-3.0 / agnes-video-2.5）
+        self.ref_mode_tabs = SegmentedWidget()
+        self.ref_mode_tabs.addItem(REF_MODE_REFS, tr("video.ref_mode.refs"))
+        self.ref_mode_tabs.addItem(REF_MODE_FRAMES, tr("video.ref_mode.frames"))
+        self.ref_mode_tabs.currentItemChanged.connect(self.on_ref_mode_changed)
+        self.ref_mode_tabs.hide()
+        ref_column_layout.addWidget(self.ref_mode_tabs)
+
+        self.ref_mode_stack = QStackedWidget()
+        ref_column_layout.addWidget(self.ref_mode_stack, 1)
+
+        # Page 0: 参考图 + 参考音频（images / audios）
         ref_container = QWidget()
         ref_container_layout = QVBoxLayout(ref_container)
         ref_container_layout.setContentsMargins(0, 0, 0, 0)
@@ -219,7 +250,30 @@ class VideoPage(QWidget):
         self.audio_area = AudioDropArea(max_files=max(video_max_audios(m) for m in VIDEO_MODELS))
         ref_container_layout.addWidget(self.audio_area)
 
-        middle_layout.addWidget(ref_container, 1)
+        self.ref_mode_stack.addWidget(ref_container)
+
+        # Page 1: 首帧 / 尾帧（firstFrame / lastFrame，与 images、audios 互斥）
+        frames_container = QWidget()
+        frames_layout = QVBoxLayout(frames_container)
+        frames_layout.setContentsMargins(0, 0, 0, 0)
+        frames_layout.setSpacing(5)
+
+        self.first_frame_area = self._build_frame_slot(
+            frames_layout, "video.first_frame", "video.first_frame_placeholder",
+            self.on_first_frame_paste, self.on_first_frame_clear,
+        )
+        self.last_frame_area = self._build_frame_slot(
+            frames_layout, "video.last_frame", "video.last_frame_placeholder",
+            self.on_last_frame_paste, self.on_last_frame_clear,
+        )
+
+        # 参考视频预留位：wan-3.0 官方公告预告将支持上传参考视频，接口参数暂未开放；
+        # 上游开放后在 VIDEO_MODEL_SPECS 中把 wan-3.0 的 max_videos 置为正数，
+        # 并在此处追加视频素材槽位（请求 / 任务 / 历史链路已按 ref_videos 贯通）
+
+        self.ref_mode_stack.addWidget(frames_container)
+
+        middle_layout.addWidget(ref_column, 1)
 
         # Prompt Widget
         self.prompt_widget = PromptWidget()
@@ -262,12 +316,64 @@ class VideoPage(QWidget):
         self.model_combo.currentTextChanged.connect(self.on_model_changed)
         self._apply_model_options(initial_model)
 
+    def _build_frame_slot(self, parent_layout, label_key, placeholder_key, paste_handler, clear_handler):
+        """构建单个首帧/尾帧槽位：标题行（粘贴/清除按钮）+ 单图拖拽区。"""
+        header_layout = QHBoxLayout()
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        header_layout.addWidget(StrongBodyLabel(tr(label_key)))
+        header_layout.addStretch()
+
+        paste_btn = TransparentToolButton(FluentIcon.PASTE)
+        paste_btn.setToolTip(tr("drop.tooltip.paste"))
+        paste_btn.clicked.connect(paste_handler)
+        header_layout.addWidget(paste_btn)
+
+        clear_btn = TransparentToolButton(FluentIcon.DELETE)
+        clear_btn.setToolTip(tr("drop.tooltip.clear"))
+        clear_btn.clicked.connect(clear_handler)
+        header_layout.addWidget(clear_btn)
+
+        parent_layout.addLayout(header_layout)
+
+        frame_area = ImageDropArea(max_images=1, placeholder_key=placeholder_key)
+        frame_area.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        parent_layout.addWidget(frame_area, 1)
+        return frame_area
+
     def keyPressEvent(self, event):
         if event.modifiers() == Qt.ControlModifier and event.key() == Qt.Key_V:
             clipboard = QApplication.clipboard()
             mime_data = clipboard.mimeData()
             if mime_data.hasImage() or mime_data.hasUrls():
-                self.drop_area.paste_from_clipboard()
+                self._paste_target().paste_from_clipboard()
+
+    def _paste_target(self):
+        """Ctrl+V 的目标素材区：首尾帧模式下优先粘贴到空帧槽位。"""
+        if self._frames_mode_active():
+            if not self.first_frame_area.image_paths:
+                return self.first_frame_area
+            if not self.last_frame_area.image_paths:
+                return self.last_frame_area
+            return self.first_frame_area
+        return self.drop_area
+
+    # --- 素材模式（参考图/音频 ↔ 首尾帧，二者互斥） ---
+
+    def _model_supports_frames(self):
+        return video_supports_frames(self._current_model())
+
+    def _frames_mode_active(self):
+        return self._ref_mode_frames and self._model_supports_frames()
+
+    def on_ref_mode_changed(self, route_key):
+        self._set_ref_mode(route_key == REF_MODE_FRAMES, persist=True)
+
+    def _set_ref_mode(self, frames, persist=False):
+        """切换素材面板；persist=False 用于模型不支持首尾帧时的临时回退，不覆盖用户偏好。"""
+        self._ref_mode_frames = bool(frames)
+        self.ref_mode_stack.setCurrentIndex(1 if self._ref_mode_frames else 0)
+        if persist:
+            cfg.set("video_frames_mode", self._ref_mode_frames)
 
     def update_parallel_value_label_color(self):
         """Update the color of the parallel value label based on theme"""
@@ -328,6 +434,15 @@ class VideoPage(QWidget):
         self.drop_area.MAX_IMAGES = video_max_images(model)
         self.drop_area.update_texts()
         self.hint_label.setText(tr(HINT_KEYS.get(model, HINT_KEYS[VIDEO_MODELS[0]])))
+
+        # 首尾帧模式仅对支持的模型开放；切换到不支持的模型时临时回退到参考图模式
+        supports_frames = video_supports_frames(model)
+        self.ref_mode_tabs.setVisible(supports_frames)
+        use_frames = supports_frames and bool(cfg.get("video_frames_mode", False))
+        self.ref_mode_tabs.blockSignals(True)
+        self.ref_mode_tabs.setCurrentItem(REF_MODE_FRAMES if use_frames else REF_MODE_REFS)
+        self.ref_mode_tabs.blockSignals(False)
+        self._set_ref_mode(use_frames)
 
     def on_model_changed(self, model):
         self._apply_model_options(model)
@@ -394,8 +509,25 @@ class VideoPage(QWidget):
         cfg.set("auto_retry_on_failure", self.auto_retry_cb.isChecked())
         cfg.set("video_parallel_tasks", parallel_count)
 
-        ref_urls = [p for p in self.drop_area.image_paths if os.path.isfile(p)][:video_max_images(model)]
-        ref_audios = [p for p in self.audio_area.audio_paths if os.path.isfile(p)][:video_max_audios(model)]
+        # 素材模式互斥：首尾帧模式只收集 firstFrame/lastFrame（二者至少其一），
+        # 参考图模式只收集 images/audios；两套参数不会同时出现在请求里
+        first_frame = last_frame = None
+        if self._frames_mode_active():
+            frame_paths = self.first_frame_area.image_paths
+            if frame_paths and os.path.isfile(frame_paths[0]):
+                first_frame = frame_paths[0]
+            frame_paths = self.last_frame_area.image_paths
+            if frame_paths and os.path.isfile(frame_paths[0]):
+                last_frame = frame_paths[0]
+            if not first_frame and not last_frame:
+                InfoBar.warning(title=tr("common.warning"), content=tr("video.frames_empty_warning"),
+                                parent=self, position=InfoBarPosition.TOP_RIGHT)
+                return
+            ref_urls = []
+            ref_audios = []
+        else:
+            ref_urls = [p for p in self.drop_area.image_paths if os.path.isfile(p)][:video_max_images(model)]
+            ref_audios = [p for p in self.audio_area.audio_paths if os.path.isfile(p)][:video_max_audios(model)]
 
         params = {
             "model": model,
@@ -403,6 +535,8 @@ class VideoPage(QWidget):
             "size": resolution,
             "ref_urls": ref_urls,
             "ref_audios": ref_audios,
+            "first_frame": first_frame,
+            "last_frame": last_frame,
             "duration": duration,
             "seed": seed,
             "variants": 1,
@@ -436,6 +570,9 @@ class VideoPage(QWidget):
                 duration=params.get("duration"),
                 seed=params.get("seed"),
                 ref_audios=params.get("ref_audios"),
+                first_frame=params.get("first_frame"),
+                last_frame=params.get("last_frame"),
+                ref_videos=params.get("ref_videos"),
             )
 
             task_widget.progress_ring.show()
@@ -509,11 +646,37 @@ class VideoPage(QWidget):
         if ref_audios:
             self.audio_area.add_files(ref_audios, show_limit_warning=False)
 
+        # 首尾帧任务恢复：任一帧存在即切到首尾帧模式（参考图 / 音频此时为空，
+        # 与接口互斥约束一致）
+        first_frame = task_data.get("first_frame")
+        last_frame = task_data.get("last_frame")
+        self.first_frame_area.clear_images()
+        self.last_frame_area.clear_images()
+        if video_supports_frames(model):
+            if first_frame and os.path.isfile(first_frame):
+                self.first_frame_area.add_image(first_frame)
+            if last_frame and os.path.isfile(last_frame):
+                self.last_frame_area.add_image(last_frame)
+            if first_frame or last_frame:
+                self.ref_mode_tabs.setCurrentItem(REF_MODE_FRAMES)
+
     def on_image_paste(self):
         self.drop_area.paste_from_clipboard()
 
     def on_image_clear(self):
         self.drop_area.clear_images()
+
+    def on_first_frame_paste(self):
+        self.first_frame_area.paste_from_clipboard()
+
+    def on_first_frame_clear(self):
+        self.first_frame_area.clear_images()
+
+    def on_last_frame_paste(self):
+        self.last_frame_area.paste_from_clipboard()
+
+    def on_last_frame_clear(self):
+        self.last_frame_area.clear_images()
 
     def on_audio_add(self):
         self.audio_area.open_file_dialog()

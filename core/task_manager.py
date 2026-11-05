@@ -33,7 +33,8 @@ class TaskWorker(QThread):
 
     def __init__(self, prompt, model, ratio, size, ref_urls, task_id=None, variants=1,
                  output_dir=None, filename_prefix=None, quality=None, background=None,
-                 duration=None, seed=None, ref_audios=None):
+                 duration=None, seed=None, ref_audios=None, first_frame=None, last_frame=None,
+                 ref_videos=None):
         super().__init__()
         self.prompt = prompt
         self.model = model
@@ -49,6 +50,9 @@ class TaskWorker(QThread):
         self.duration = duration
         self.seed = seed
         self.ref_audios = ref_audios
+        self.first_frame = first_frame
+        self.last_frame = last_frame
+        self.ref_videos = ref_videos
         self.is_running = True
         self.setTerminationEnabled(True)
 
@@ -64,6 +68,9 @@ class TaskWorker(QThread):
                         duration=self.duration,
                         seed=self.seed,
                         ref_audios=self.ref_audios,
+                        first_frame=self.first_frame,
+                        last_frame=self.last_frame,
+                        ref_videos=self.ref_videos,
                     )
                     if res.get("code") != 0:
                         self.finished_signal.emit(False, res.get("msg", "Submission failed"), "Submission failed")
@@ -80,6 +87,9 @@ class TaskWorker(QThread):
                         duration=self.duration,
                         seed=self.seed,
                         ref_audios=self.ref_audios,
+                        first_frame=self.first_frame,
+                        last_frame=self.last_frame,
+                        ref_videos=self.ref_videos,
                     )
                 except Exception as e:
                     print(f"[TaskWorker] Submission error: {e}")
@@ -226,7 +236,8 @@ class TaskManager:
 
     def create_worker(self, prompt, model, ratio, size, ref_urls, variants=1, output_dir=None,
                       filename_prefix=None, quality=None, background=None, duration=None,
-                      seed=None, ref_audios=None):
+                      seed=None, ref_audios=None, first_frame=None, last_frame=None,
+                      ref_videos=None):
         """Create and return a new TaskWorker"""
         worker = TaskWorker(
             prompt,
@@ -242,6 +253,9 @@ class TaskManager:
             duration=duration,
             seed=seed,
             ref_audios=ref_audios,
+            first_frame=first_frame,
+            last_frame=last_frame,
+            ref_videos=ref_videos,
         )
         return worker
 

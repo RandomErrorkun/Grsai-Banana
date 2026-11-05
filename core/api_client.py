@@ -17,7 +17,7 @@ from core.model_catalog import (
     video_default_resolution,
     video_duration_bounds,
     video_duration_limit,
-    VIDEO_MAX_DURATION,
+    video_supports_frames,
 )
 
 class ApiClient:
@@ -55,6 +55,10 @@ class ApiClient:
         """Convert local audio file to data URI for API submission"""
         return self._convert_file_to_data_uri(audio_path, "audio")
 
+    def _convert_video_to_data_uri(self, video_path):
+        """Convert local video file to data URI for API submission"""
+        return self._convert_file_to_data_uri(video_path, "video")
+
     def _convert_file_to_data_uri(self, file_path, media_kind):
         try:
             if os.path.isfile(file_path):
@@ -78,6 +82,14 @@ class ApiClient:
                 "flac": "flac",
                 "ogg": "ogg",
             }.get(ext, "mpeg")
+        if media_kind == "video":
+            return {
+                "mp4": "mp4",
+                "webm": "webm",
+                "mov": "quicktime",
+                "mkv": "x-matroska",
+                "avi": "x-msvideo",
+            }.get(ext, "mp4")
         if ext == 'jpg':
             return 'jpeg'
         return ext
@@ -85,14 +97,16 @@ class ApiClient:
     def _convert_paths_to_data_uris(self, paths, media_kind="image"):
         if not paths:
             return None
+        converters = {
+            "image": self._convert_image_to_data_uri,
+            "audio": self._convert_audio_to_data_uri,
+            "video": self._convert_video_to_data_uri,
+        }
+        convert = converters.get(media_kind, self._convert_image_to_data_uri)
         converted = []
         for path in paths:
             if os.path.isfile(path):  # It's a local file path
-                data_uri = (
-                    self._convert_image_to_data_uri(path)
-                    if media_kind == "image"
-                    else self._convert_audio_to_data_uri(path)
-                )
+                data_uri = convert(path)
                 if data_uri:
                     converted.append(data_uri)
             else:  # It's already a URL or data URI
@@ -157,7 +171,8 @@ class ApiClient:
 
     def build_generate_payload(self, prompt, model, aspect_ratio="auto", image_size="1K",
                                ref_image_urls=None, quality=None, background=None,
-                               duration=None, seed=None, ref_audios=None):
+                               duration=None, seed=None, ref_audios=None,
+                               first_frame=None, last_frame=None, ref_videos=None):
         """根据模型构造 /v1/api/generate 请求体（不含 replyType）。"""
         model = self._normalize_model(model)
 
@@ -197,7 +212,8 @@ class ApiClient:
                 duration_value = int(duration)
             except (TypeError, ValueError):
                 duration_value = 5
-            duration_value = max(min_duration, min(duration_value, video_duration_limit(model, resolution), max_duration, VIDEO_MAX_DURATION))
+            # 时长上限按各模型 spec 收窄（wan-3.0 支持 30 秒，无全局 15 秒钳制）
+            duration_value = max(min_duration, min(duration_value, video_duration_limit(model, resolution), max_duration))
             try:
                 seed_value = int(seed)
             except (TypeError, ValueError):
@@ -212,18 +228,38 @@ class ApiClient:
                 "resolution": resolution,
                 "duration": duration_value,
             }
+            # 首尾帧模式：firstFrame / lastFrame 与 images、audios 参数互斥，
+            # 只要提供了任一帧就不再携带参考图 / 参考音频（依据 wan-video 接口文档）；
+            # 仅对接口提供该参数的模型生效（UI 已挡，这里按模型能力再兜底）
+            if (first_frame or last_frame) and video_supports_frames(model):
+                payload.pop("images", None)
+                payload.pop("audios", None)
+                if first_frame:
+                    payload["firstFrame"] = first_frame
+                if last_frame:
+                    payload["lastFrame"] = last_frame
+            # 参考视频：wan-3.0 官方公告预告将支持，接口参数暂未开放；
+            # 上游开放后（如 videos 字段）在此处按文档接入，上层链路已预留 ref_videos
+            if ref_videos:
+                payload["videos"] = ref_videos
             return payload
 
         return None
 
     def submit_task(self, prompt, model, aspect_ratio="auto", image_size="1K", ref_image_urls=None,
-                    variants=1, quality=None, background=None, duration=None, seed=None, ref_audios=None):
+                    variants=1, quality=None, background=None, duration=None, seed=None, ref_audios=None,
+                    first_frame=None, last_frame=None, ref_videos=None):
         """Submit task to the unified generate API (/v1/api/generate, replyType=async)."""
         model = self._normalize_model(model)
 
         # Convert local file paths to data URIs for API submission
         ref_image_urls = self._convert_paths_to_data_uris(ref_image_urls, "image")
         ref_audios = self._convert_paths_to_data_uris(ref_audios, "audio")
+        # 首尾帧是单图，转 data URI 后取列表首项（URL / data URI 原样透传）
+        first_frame = (self._convert_paths_to_data_uris([first_frame], "image") or [None])[0] if first_frame else None
+        last_frame = (self._convert_paths_to_data_uris([last_frame], "image") or [None])[0] if last_frame else None
+        # 参考视频预留口子：上游开放后本地文件在此转 data URI（mime 前缀 video/*）
+        ref_videos = self._convert_paths_to_data_uris(ref_videos, "video")
 
         payload = self.build_generate_payload(
             prompt, model,
@@ -235,6 +271,9 @@ class ApiClient:
             duration=duration,
             seed=seed,
             ref_audios=ref_audios,
+            first_frame=first_frame,
+            last_frame=last_frame,
+            ref_videos=ref_videos,
         )
         if payload is None:
             return {"code": -1, "msg": f"Unknown model: {model}"}

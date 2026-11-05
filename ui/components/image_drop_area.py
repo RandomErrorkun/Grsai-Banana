@@ -106,12 +106,14 @@ class ImageDropArea(QFrame):
     SUPPORTED_EXTENSIONS = (".png", ".jpg", ".jpeg", ".webp", ".bmp")
     MAX_IMAGES = 14
 
-    def __init__(self, parent=None, max_images=None):
+    def __init__(self, parent=None, max_images=None, placeholder_key=None):
         super().__init__(parent)
         self.setAcceptDrops(True)
         self.setFrameStyle(QFrame.StyledPanel | QFrame.Sunken)
         if max_images is not None:
             self.MAX_IMAGES = int(max_images)
+        # 自定义占位文案的 i18n 键（如首帧 / 尾帧单图槽位）；缺省用通用参考图文案
+        self.placeholder_key = placeholder_key
 
         self.layout = QVBoxLayout(self)
         self.layout.setContentsMargins(10, 10, 10, 10)
@@ -150,7 +152,10 @@ class ImageDropArea(QFrame):
         qconfig.themeChanged.connect(self.update_style)
 
     def update_texts(self):
-        self.label.setText(tr("drop.placeholder", max=self.MAX_IMAGES))
+        if self.placeholder_key:
+            self.label.setText(tr(self.placeholder_key))
+        else:
+            self.label.setText(tr("drop.placeholder", max=self.MAX_IMAGES))
 
     def update_style(self):
         if isDarkTheme():

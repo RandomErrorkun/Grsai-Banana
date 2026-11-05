@@ -3,7 +3,7 @@ authors = ["Moeary"]
 channels = ["conda-forge"]
 name = "Grsai-Banana"
 platforms = ["win-64"]
-version = "1.5.4"
+version = "1.5.5"
 
 [tasks]
 start = "pythonw main.py"
@@ -11,7 +11,10 @@ debug = "python main.py"
 #--windows-console-mode为disable可以不产生命令行窗口
 #--include-qt-plugins 加入 multimedia 分类：QtMultimedia 的 WMF 后端是运行时插件加载，
 #Nuitka 默认的 sensible 集合不含它，缺少时 QMediaPlayer 初始化失败（音频无法播放/测时长）
-build = "nuitka --standalone --onefile --enable-plugin=pyside6 --include-qt-plugins=sensible,multimedia --windows-console-mode=force --windows-icon-from-ico=logo.ico --include-data-file=logo.ico=logo.ico --output-dir=dist --remove-output main.py"
+#--output-filename 用 pixi 注入的 PIXI_PROJECT_VERSION 环境变量自动带上版本号，
+#产物为 dist/grsai_gui_<版本号>.exe，升级时只需改 [workspace] version 一处
+#（注意：任务 shell 不支持 ${VAR} 花括号语法，必须用裸 $VAR 写法）
+build = "nuitka --standalone --onefile --enable-plugin=pyside6 --include-qt-plugins=sensible,multimedia --windows-console-mode=force --windows-icon-from-ico=logo.ico --include-data-file=logo.ico=logo.ico --output-filename=grsai_gui_$PIXI_PROJECT_VERSION.exe --output-dir=dist --remove-output main.py"
 
 [dependencies]
 python = "3.11.*"

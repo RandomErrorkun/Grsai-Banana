@@ -48,6 +48,7 @@ GPT_IMAGE_MODELS = [
 VIDEO_MODELS = [
     "minimax-h3",
     "agnes-video-2.5",
+    "wan-3.0",
 ]
 
 LEGACY_IMAGE_MODEL_ALIASES = {
@@ -205,6 +206,7 @@ MINIMAX_VIDEO_DURATION_LIMITS = {
 
 # agnes-video-2.5（依据 api_docs/agnes-video接口.md，2026-10-17 版本）
 # 支持对白/声音设计提示（口型同步），时长固定 4~12 秒，与分辨率无关
+# 首尾帧：接口文档同样提供 firstFrame / lastFrame（与 images、audios 互斥）
 AGNES_VIDEO_ASPECT_OPTIONS = ["16:9", "9:16", "21:9", "4:3", "1:1", "3:4"]
 AGNES_VIDEO_RESOLUTIONS = ["720p", "1080p", "2k"]
 AGNES_VIDEO_MAX_IMAGES = 5
@@ -212,7 +214,19 @@ AGNES_VIDEO_MAX_AUDIOS = 3
 AGNES_VIDEO_MIN_DURATION = 4
 AGNES_VIDEO_MAX_DURATION = 12
 
-# 旧常量名保留给既有引用（默认指向 minimax-h3）
+# wan-3.0（依据 api_docs/wan-video接口.md，2026-11-05 版本）
+# 参考图最多 10 张；参考音频最多 5 段、每段最长 15 秒（由服务端校验）；
+# 首尾帧 firstFrame / lastFrame 与 images、audios 参数互斥，可只给其中一帧
+WAN_VIDEO_ASPECT_OPTIONS = ["16:9", "9:16", "21:9", "4:3", "1:1", "3:4"]
+WAN_VIDEO_RESOLUTIONS = ["480p", "720p", "1080p"]
+WAN_VIDEO_MAX_IMAGES = 10
+WAN_VIDEO_MAX_AUDIOS = 5
+WAN_VIDEO_MIN_DURATION = 2
+WAN_VIDEO_MAX_DURATION = 30
+
+# 旧常量名保留给既有引用（默认指向 minimax-h3）。
+# 注意：VIDEO_MAX_DURATION（15 秒）是 minimax 时代的全局时长上限，wan-3.0 已支持
+# 30 秒，时长钳制一律改按各模型 spec 的 min/max_duration 处理，勿再叠加该全局值。
 VIDEO_ASPECT_OPTIONS = MINIMAX_VIDEO_ASPECT_OPTIONS
 VIDEO_RESOLUTIONS = MINIMAX_VIDEO_RESOLUTIONS
 VIDEO_MAX_IMAGES = MINIMAX_VIDEO_MAX_IMAGES
@@ -221,6 +235,10 @@ VIDEO_MAX_DURATION = MINIMAX_VIDEO_MAX_DURATION
 VIDEO_DURATION_LIMITS = MINIMAX_VIDEO_DURATION_LIMITS
 
 # 各视频模型的可选参数集（UI 与请求构造共用同一份配置）
+# supports_frames：接口是否提供 firstFrame / lastFrame（与 images、audios 互斥）
+# max_videos：参考视频上限。0 表示暂不支持——wan-3.0 官方公告预告日后将支持上传
+#             参考视频，接口参数尚未开放；届时仅需在此置为正数并补充 UI 入口，
+#             请求 / 任务 / 历史链路（ref_videos）已预留贯通
 VIDEO_MODEL_SPECS = {
     "minimax-h3": {
         "aspects": MINIMAX_VIDEO_ASPECT_OPTIONS,
@@ -232,6 +250,8 @@ VIDEO_MODEL_SPECS = {
         "duration_limits": MINIMAX_VIDEO_DURATION_LIMITS,
         "default_aspect": "landscape",
         "default_resolution": "480p",
+        "supports_frames": False,
+        "max_videos": 0,
     },
     "agnes-video-2.5": {
         "aspects": AGNES_VIDEO_ASPECT_OPTIONS,
@@ -243,6 +263,21 @@ VIDEO_MODEL_SPECS = {
         "duration_limits": {r: AGNES_VIDEO_MAX_DURATION for r in AGNES_VIDEO_RESOLUTIONS},
         "default_aspect": "16:9",
         "default_resolution": "720p",
+        "supports_frames": True,
+        "max_videos": 0,
+    },
+    "wan-3.0": {
+        "aspects": WAN_VIDEO_ASPECT_OPTIONS,
+        "resolutions": WAN_VIDEO_RESOLUTIONS,
+        "max_images": WAN_VIDEO_MAX_IMAGES,
+        "max_audios": WAN_VIDEO_MAX_AUDIOS,
+        "min_duration": WAN_VIDEO_MIN_DURATION,
+        "max_duration": WAN_VIDEO_MAX_DURATION,
+        "duration_limits": {r: WAN_VIDEO_MAX_DURATION for r in WAN_VIDEO_RESOLUTIONS},
+        "default_aspect": "16:9",
+        "default_resolution": "720p",
+        "supports_frames": True,
+        "max_videos": 0,
     },
 }
 
@@ -286,6 +321,16 @@ def video_duration_limit(model, resolution):
     limits = _video_spec(model)["duration_limits"]
     max_duration = _video_spec(model)["max_duration"]
     return limits.get(resolution, max_duration)
+
+
+def video_supports_frames(model):
+    """模型是否支持首尾帧（firstFrame / lastFrame，与 images、audios 互斥）。"""
+    return bool(_video_spec(model).get("supports_frames"))
+
+
+def video_max_videos(model):
+    """参考视频上限；0 表示该模型暂不支持参考视频（接口参数未开放）。"""
+    return int(_video_spec(model).get("max_videos", 0))
 
 
 NANO_MODELS = set(BANANA_PRO_MODELS)

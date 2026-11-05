@@ -28,6 +28,12 @@ DEFAULT_CONFIG = {
     "agnes_video_aspect_ratio": "16:9",
     "agnes_video_resolution": "720p",
     "agnes_video_duration": 5,
+    # wan-3.0 parameters
+    "wan_video_aspect_ratio": "16:9",
+    "wan_video_resolution": "720p",
+    "wan_video_duration": 5,
+    # 首尾帧素材模式（仅支持 firstFrame/lastFrame 的模型生效）
+    "video_frames_mode": False,
     # Shared parameters
     "auto_retry_on_failure": False,
     "vip_moderation_auto_retry": False,

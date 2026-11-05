@@ -34,6 +34,9 @@ class HistoryManager:
                     duration INTEGER,
                     seed INTEGER,
                     ref_audios TEXT,
+                    first_frame TEXT,
+                    last_frame TEXT,
+                    ref_videos TEXT,
                     status TEXT NOT NULL,
                     created_at TEXT NOT NULL,
                     result_path TEXT,
@@ -45,11 +48,16 @@ class HistoryManager:
                 """
             )
             # 为旧版本数据库补充视频任务相关字段
+            # first_frame / last_frame：首尾帧任务（wan-3.0 等，与 images/audios 互斥）
+            # ref_videos：参考视频（接口参数暂未开放，列先行预留）
             existing_columns = {row["name"] for row in conn.execute("PRAGMA table_info(history_tasks)")}
             for column, decl in (
                 ("duration", "INTEGER"),
                 ("seed", "INTEGER"),
                 ("ref_audios", "TEXT"),
+                ("first_frame", "TEXT"),
+                ("last_frame", "TEXT"),
+                ("ref_videos", "TEXT"),
             ):
                 if column not in existing_columns:
                     conn.execute(f"ALTER TABLE history_tasks ADD COLUMN {column} {decl}")
@@ -78,6 +86,7 @@ class HistoryManager:
         task = dict(row)
         task["ref_images"] = self._deserialize_ref_images(task.get("ref_images"))
         task["ref_audios"] = self._deserialize_ref_images(task.get("ref_audios"))
+        task["ref_videos"] = self._deserialize_ref_images(task.get("ref_videos"))
         return task
 
     def _insert_task(self, conn, task):
@@ -85,10 +94,10 @@ class HistoryManager:
             """
             INSERT OR REPLACE INTO history_tasks (
                 id, prompt, model, aspect_ratio, image_size, ref_images,
-                duration, seed, ref_audios,
+                duration, seed, ref_audios, first_frame, last_frame, ref_videos,
                 status, created_at, result_path, preview_url,
                 failure_reason, error_message, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 task["id"],
@@ -100,6 +109,9 @@ class HistoryManager:
                 task.get("duration"),
                 task.get("seed"),
                 self._serialize_ref_images(task.get("ref_audios")),
+                task.get("first_frame"),
+                task.get("last_frame"),
+                self._serialize_ref_images(task.get("ref_videos")),
                 task["status"],
                 task["created_at"],
                 task.get("result_path"),
@@ -166,7 +178,8 @@ class HistoryManager:
             pass
 
     def add_task(self, task_id, prompt, model, aspect_ratio, image_size, ref_images=None,
-                 duration=None, seed=None, ref_audios=None):
+                 duration=None, seed=None, ref_audios=None, first_frame=None, last_frame=None,
+                 ref_videos=None):
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         task = {
             "id": task_id,
@@ -178,6 +191,9 @@ class HistoryManager:
             "duration": duration,
             "seed": seed,
             "ref_audios": ref_audios,
+            "first_frame": first_frame,
+            "last_frame": last_frame,
+            "ref_videos": ref_videos,
             "status": "running",
             "created_at": now,
             "result_path": None,
