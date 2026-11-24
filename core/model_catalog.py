@@ -43,6 +43,11 @@ GPT_IMAGE_MODELS = [
     "gpt-image-2.5",
     "gpt-image-2.5-flare",
     "gpt-image-2.5-sunburst",
+    # 2026-11-08 官方更新公告新增 2.6 系列（含 sunburst / flare），
+    # 基座 gpt-image-2.6 同步上线（接口文档 2026-11-15 版已列出）
+    "gpt-image-2.6",
+    "gpt-image-2.6-flare",
+    "gpt-image-2.6-sunburst",
 ]
 
 VIDEO_MODELS = [
@@ -97,22 +102,30 @@ def nano_ratio_options(model_name):
     return list(NANO_BASE_RATIOS)
 
 
-# gpt-image-2 / gpt-image-2.5：支持比例或 1K 像素值（依据 api_docs/gpt-image-2_gpt-image-2.5接口.md，2026-09-15 版本）
+# gpt-image-2 / gpt-image-2.5 / gpt-image-2.6：支持比例或 1K 像素值
+# （依据 api_docs/452409160e0.md，2026-11-15 版本）
 GPT_IMAGE_RATIOS = [
     "auto", "1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3",
     "5:4", "4:5", "21:9", "9:21", "1:2", "2:1",
 ]
 
-# vip 系模型只支持像素值，比例需按 1K/2K/4K 档位换算成像素（同上文档，2026-09-15 版本）
+# vip 系模型只支持像素值，比例需按 1K/2K/4K 档位换算成像素（同上文档，2026-11-15 版本）
+# 2.6-flare / 2.6-sunburst 与 2.5 同级，同样只接受像素值
 GPT_PIXEL_ONLY_MODELS = [
     "gpt-image-2-vip",
     "gpt-image-2.5-flare",
     "gpt-image-2.5-sunburst",
+    "gpt-image-2.6-flare",
+    "gpt-image-2.6-sunburst",
 ]
+# 2026-11-15 版文档的 background 参数不再列出模型限制；沿用 2.5 系列的口径，
+# 2.6 的 flare / sunburst 同级支持 transparent，基座模型不开放
 GPT_TRANSPARENT_MODELS = [
     "gpt-image-2-vip",
     "gpt-image-2.5-flare",
     "gpt-image-2.5-sunburst",
+    "gpt-image-2.6-flare",
+    "gpt-image-2.6-sunburst",
 ]
 GPT_VIP_RATIOS = [
     "auto", "1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3",
@@ -139,13 +152,28 @@ GPT_PIXEL_MAP = {
     "1:2": ["768x1536", "1536x3072", "1920x3840"],
 }
 
-# 各模型支持的质量档位（依据 api_docs/gpt-image-2_gpt-image-2.5接口.md，2026-09-15 版本）
+# 各模型支持的质量档位（依据 api_docs/452409160e0.md，2026-11-15 版本）
+# 注：2026-11-15 版文档同步放宽了 2-vip / 2.5-flare（补 auto 与 low/high 档）；
+#     2026-11-08 公告确认 2.6 的 sunburst / flare 不支持 xhigh / max
 GPT_IMAGE_QUALITY_OPTIONS = {
     "gpt-image-2": ["auto"],
     "gpt-image-2.5": ["auto"],
-    "gpt-image-2-vip": ["medium"],
-    "gpt-image-2.5-flare": ["low", "medium", "high"],
-    "gpt-image-2.5-sunburst": ["low", "medium", "high", "xhigh", "max"],
+    "gpt-image-2-vip": ["auto", "low", "medium", "high"],
+    "gpt-image-2.5-flare": ["auto", "low", "medium", "high"],
+    "gpt-image-2.5-sunburst": ["auto", "low", "medium", "high", "xhigh", "max"],
+    "gpt-image-2.6": ["auto"],
+    "gpt-image-2.6-flare": ["auto", "low", "medium", "high"],
+    "gpt-image-2.6-sunburst": ["auto", "low", "medium", "high"],
+}
+
+# outputFormat 返回图片格式（依据 api_docs/452409160e0.md，2026-11-15 版本 + 2026-11-08 公告）
+#   - png 为全局默认；gif 仅 2.6 系列支持，svg 仅基座 gpt-image-2.6 支持
+#   - 公告明确「2.6 的 sunburst 和 flare 仅支持 gif 图」，两档锁定为 gif 单选
+#   - 未列出的模型不支持该参数，构造请求时不携带
+GPT_OUTPUT_FORMAT_OPTIONS = {
+    "gpt-image-2.6": ["png", "gif", "svg"],
+    "gpt-image-2.6-flare": ["gif"],
+    "gpt-image-2.6-sunburst": ["gif"],
 }
 
 
@@ -164,6 +192,11 @@ def gpt_quality_options(model_name):
     if not options:
         return ["auto"]
     return list(options)
+
+
+def gpt_output_format_options(model_name):
+    """模型支持的 outputFormat 选项；空列表表示该模型不支持此参数。"""
+    return list(GPT_OUTPUT_FORMAT_OPTIONS.get(model_name, []))
 
 
 def gpt_pixel_value(ratio, tier):

@@ -10,6 +10,7 @@ from core.model_catalog import (
     VIDEO_MODEL_SET,
     GPT_IMAGE_QUALITY_OPTIONS,
     GPT_TRANSPARENT_MODELS,
+    GPT_OUTPUT_FORMAT_OPTIONS,
     LEGACY_IMAGE_MODEL_ALIASES,
     video_aspect_options,
     video_resolutions,
@@ -171,7 +172,7 @@ class ApiClient:
 
     def build_generate_payload(self, prompt, model, aspect_ratio="auto", image_size="1K",
                                ref_image_urls=None, quality=None, background=None,
-                               duration=None, seed=None, ref_audios=None,
+                               output_format=None, duration=None, seed=None, ref_audios=None,
                                first_frame=None, last_frame=None, ref_videos=None):
         """根据模型构造 /v1/api/generate 请求体（不含 replyType）。"""
         model = self._normalize_model(model)
@@ -199,6 +200,10 @@ class ApiClient:
             payload["quality"] = quality if quality in quality_options else quality_options[0]
             if background == "transparent" and model in GPT_TRANSPARENT_MODELS:
                 payload["background"] = "transparent"
+            # outputFormat 仅 2.6 系列支持；非法取值回退到该模型首个可选格式
+            format_options = GPT_OUTPUT_FORMAT_OPTIONS.get(model)
+            if format_options:
+                payload["outputFormat"] = output_format if output_format in format_options else format_options[0]
             if ref_image_urls:
                 payload["images"] = ref_image_urls
             return payload
@@ -247,8 +252,8 @@ class ApiClient:
         return None
 
     def submit_task(self, prompt, model, aspect_ratio="auto", image_size="1K", ref_image_urls=None,
-                    variants=1, quality=None, background=None, duration=None, seed=None, ref_audios=None,
-                    first_frame=None, last_frame=None, ref_videos=None):
+                    variants=1, quality=None, background=None, output_format=None, duration=None,
+                    seed=None, ref_audios=None, first_frame=None, last_frame=None, ref_videos=None):
         """Submit task to the unified generate API (/v1/api/generate, replyType=async)."""
         model = self._normalize_model(model)
 
@@ -268,6 +273,7 @@ class ApiClient:
             ref_image_urls=ref_image_urls,
             quality=quality,
             background=background,
+            output_format=output_format,
             duration=duration,
             seed=seed,
             ref_audios=ref_audios,

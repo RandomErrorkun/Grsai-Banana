@@ -20,6 +20,7 @@ from core.model_catalog import (
     nano_ratio_options,
     gpt_ratio_options,
     gpt_quality_options,
+    gpt_output_format_options,
     gpt_pixel_value,
 )
 from core.task_manager import task_manager
@@ -162,7 +163,16 @@ class GeneratorPage(QWidget):
 
         self.gpt_vip_row = self._make_row(self.gpt_tier_box, transparent_holder)
         settings_inner.addWidget(self.gpt_vip_row)
-        
+
+        # Output Format (GPT Image 2.6 系列；flare / sunburst 仅 gif)
+        self.gpt_format_label = CaptionLabel(tr("generator.gpt_output_format"))
+        self.gpt_format_combo = ComboBox()
+        self.gpt_format_box = self._make_field(self.gpt_format_label, self.gpt_format_combo)
+
+        self.gpt_format_row = self._make_row(self.gpt_format_box, QWidget())
+        self.gpt_format_row.hide()
+        settings_inner.addWidget(self.gpt_format_row)
+
         # Auto Retry and Parallel Tasks
         retry_parallel_layout = QHBoxLayout()
         
@@ -404,6 +414,7 @@ class GeneratorPage(QWidget):
 
         # GPT 行：比例 + 质量
         self.gpt_row.setVisible(is_completion)
+        format_options = gpt_output_format_options(model_name) if is_completion else []
         if is_completion:
             selected_gpt_ratio = cfg.get("gpt_image_size", "auto")
             self._set_combo_items(self.gpt_ratio_combo, gpt_ratio_options(model_name), selected_gpt_ratio)
@@ -414,6 +425,15 @@ class GeneratorPage(QWidget):
             if show_quality:
                 selected_quality = cfg.get("gpt_image_quality", quality_options[0])
                 self._set_combo_items(self.gpt_quality_combo, quality_options, selected_quality)
+
+            # 输出格式行：仅 2.6 系列显示（flare / sunburst 锁定 gif 单选）
+            show_format = bool(format_options)
+            self.gpt_format_row.setVisible(show_format)
+            if show_format:
+                selected_format = cfg.get("gpt_image_output_format", "png")
+                self._set_combo_items(self.gpt_format_combo, format_options, selected_format)
+        else:
+            self.gpt_format_row.setVisible(False)
 
         # GPT vip 行：像素档位 + 透明背景
         pixel_only = is_completion and is_gpt_pixel_only(model_name)
@@ -440,6 +460,7 @@ class GeneratorPage(QWidget):
         variants = 1
         quality = None
         background = None
+        output_format = None
 
         if self._is_nano_model(model):
             ratio = self.ratio_combo.currentText()
@@ -471,6 +492,11 @@ class GeneratorPage(QWidget):
                 background = "transparent"
             cfg.set("gpt_transparent_background", self.gpt_transparent_cb.isChecked())
 
+            format_options = gpt_output_format_options(model)
+            if format_options:
+                output_format = self.gpt_format_combo.currentText()
+                cfg.set("gpt_image_output_format", output_format)
+
         parallel_count = self.parallel_slider.value()
 
         cfg.set("auto_retry_on_failure", self.auto_retry_cb.isChecked())
@@ -489,6 +515,7 @@ class GeneratorPage(QWidget):
             "variants": 1,
             "quality": quality,
             "background": background,
+            "output_format": output_format,
         }
 
         # 新接口不提供 variants 参数，多变体改为提交多个独立任务
@@ -518,6 +545,7 @@ class GeneratorPage(QWidget):
                 variants=task_widget.params.get("variants", 1),
                 quality=task_widget.params.get("quality"),
                 background=task_widget.params.get("background"),
+                output_format=task_widget.params.get("output_format"),
             )
 
             task_widget.progress_ring.show()

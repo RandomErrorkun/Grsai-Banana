@@ -13,8 +13,9 @@ from core.history_manager import history_mgr
 from core.model_catalog import VIDEO_MODEL_SET
 
 
+# gpt-image-2.6 起支持 svg 出图，保存文件时按 URL 后缀识别（2026-11-15 文档）
 RESULT_URL_EXTENSIONS = (
-    ".jpg", ".jpeg", ".png", ".webp", ".gif", ".mp4", ".webm", ".mov", ".avi", ".mkv",
+    ".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg", ".mp4", ".webm", ".mov", ".avi", ".mkv",
 )
 
 
@@ -33,8 +34,8 @@ class TaskWorker(QThread):
 
     def __init__(self, prompt, model, ratio, size, ref_urls, task_id=None, variants=1,
                  output_dir=None, filename_prefix=None, quality=None, background=None,
-                 duration=None, seed=None, ref_audios=None, first_frame=None, last_frame=None,
-                 ref_videos=None):
+                 output_format=None, duration=None, seed=None, ref_audios=None, first_frame=None,
+                 last_frame=None, ref_videos=None):
         super().__init__()
         self.prompt = prompt
         self.model = model
@@ -47,6 +48,7 @@ class TaskWorker(QThread):
         self.filename_prefix = filename_prefix
         self.quality = quality
         self.background = background
+        self.output_format = output_format
         self.duration = duration
         self.seed = seed
         self.ref_audios = ref_audios
@@ -65,6 +67,7 @@ class TaskWorker(QThread):
                         variants=self.variants,
                         quality=self.quality,
                         background=self.background,
+                        output_format=self.output_format,
                         duration=self.duration,
                         seed=self.seed,
                         ref_audios=self.ref_audios,
@@ -235,8 +238,8 @@ class TaskManager:
         self.active_workers = {}  # task_widget -> worker
 
     def create_worker(self, prompt, model, ratio, size, ref_urls, variants=1, output_dir=None,
-                      filename_prefix=None, quality=None, background=None, duration=None,
-                      seed=None, ref_audios=None, first_frame=None, last_frame=None,
+                      filename_prefix=None, quality=None, background=None, output_format=None,
+                      duration=None, seed=None, ref_audios=None, first_frame=None, last_frame=None,
                       ref_videos=None):
         """Create and return a new TaskWorker"""
         worker = TaskWorker(
@@ -250,6 +253,7 @@ class TaskManager:
             filename_prefix=filename_prefix,
             quality=quality,
             background=background,
+            output_format=output_format,
             duration=duration,
             seed=seed,
             ref_audios=ref_audios,

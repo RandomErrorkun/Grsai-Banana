@@ -10,11 +10,12 @@
 
 - 多模型支持:
   - Banana 系列：`nano-banana`、`nano-banana-fast`、`nano-banana-2`、`nano-banana-2.1`、`nano-banana-2-lite`、`nano-banana-2-cl / -2k-cl / -4k-cl`、`nano-banana-pro`、`nano-banana-pro-vt / -cl / -vip / -4k-vip`
-  - GPT Image 系列：`gpt-image-2`、`gpt-image-2-vip`、`gpt-image-2.5`、`gpt-image-2.5-flare`、`gpt-image-2.5-sunburst`
+  - GPT Image 系列：`gpt-image-2`、`gpt-image-2-vip`、`gpt-image-2.5`、`gpt-image-2.5-flare`、`gpt-image-2.5-sunburst`、`gpt-image-2.6`、`gpt-image-2.6-flare`、`gpt-image-2.6-sunburst`
 - 参数灵活配置:
   - Banana 系列支持 1K / 2K / 4K 分辨率与宽高比选择（1:1、16:9、9:16、4:3、3:4、3:2、2:3、5:4、4:5、21:9 等）；`nano-banana-2` 系列额外支持 1:4、4:1、1:8、8:1 超宽比例
   - GPT Image 支持多种宽高比；vip 系模型按「宽高比 + 1K/2K/4K 档位」自动换算官方像素参考值
-  - `gpt-image-2.5-flare / -sunburst` 支持质量参数（low / medium / high / xhigh / max）
+  - `gpt-image-2.5-flare / -sunburst` 支持质量参数（low / medium / high，sunburst 另有 xhigh / max）；`gpt-image-2.6` 系列同样支持质量参数（不含 xhigh / max）
+  - `gpt-image-2.6` 系列支持输出格式选择（png / gif / svg）；其中 flare / sunburst 仅支持 gif 输出，svg 仅基座 `gpt-image-2.6` 支持
   - vip 系模型支持透明背景开关
 - 每个模型选项卡记忆上次选择的模型与参数
 - 多图参考:

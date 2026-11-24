@@ -3,7 +3,7 @@ authors = ["Moeary"]
 channels = ["conda-forge"]
 name = "Grsai-Banana"
 platforms = ["win-64"]
-version = "1.5.5"
+version = "1.5.6"
 
 [tasks]
 start = "pythonw main.py"

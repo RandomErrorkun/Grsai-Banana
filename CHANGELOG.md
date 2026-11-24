@@ -2,6 +2,24 @@
 
 本文件记录 Grsai Banana 项目的功能变更，格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [1.5.6] - 2026-11-15
+
+### 新增
+
+- **新增 `gpt-image-2.6` 系列模型**（2026-11-08 官方更新公告新增 sunburst / flare，基座 2.6 同步上线；依据 api_docs/452409160e0.md，2026-11-15 版本）
+  - 生成页 GPT Image 下拉框新增 `gpt-image-2.6`、`gpt-image-2.6-flare`、`gpt-image-2.6-sunburst`；漫画页出图模型同步支持
+  - `gpt-image-2.6-flare / -sunburst` 与 vip 系同级：仅接受像素值（按「宽高比 + 1K/2K/4K 档位」自动换算），支持透明背景
+  - 质量参数：flare / sunburst 支持 auto / low / medium / high（公告确认不支持 xhigh / max）
+- **输出格式（outputFormat）参数**（接口新增，仅 2.6 系列支持）
+  - `gpt-image-2.6` 支持 png / gif / svg；`gpt-image-2.6-flare / -sunburst` 仅支持 gif（公告：2.6 的 sunburst 和 flare 仅支持 gif 图）
+  - 生成页新增「输出格式」下拉框，仅选择 2.6 系列模型时显示并记忆上次选择
+  - 下载结果按 URL 后缀识别 svg，保存为 `.svg` 文件（此前会误存为 `.png`）
+
+### 变更
+
+- 质量档位与 2026-11-15 版官方文档同步：`gpt-image-2-vip` 由仅 medium 放宽为 auto / low / medium / high；`gpt-image-2.5-flare` 补充 auto；`gpt-image-2.5-sunburst` 补充 auto
+- 本地接口文档副本 api_docs/452409160e0.md 更新为 2026-11-15 版（文档标题更名为「GPT Image系列接口」）
+
 ## [1.5.5] - 2026-11-05
 
 ### 新增

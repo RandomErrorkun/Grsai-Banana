@@ -17,6 +17,7 @@ DEFAULT_CONFIG = {
     "gpt_image_size": "auto",
     "gpt_image_quality": "auto",
     "gpt_image_tier": "1K",
+    "gpt_image_output_format": "png",
     "gpt_transparent_background": False,
     # Video generation parameters
     "video_last_model": "minimax-h3",
